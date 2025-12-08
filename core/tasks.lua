@@ -91,10 +91,28 @@ tasks.init = function()
         
         while (os.clock() * 1000 - start_time) < response_timeout do
             mq.delay(check_interval)
-            if tasks.check_taskhud_response() then
+            
+            -- Use the SAME method as manual taskinfo refresh (global variables)
+            if _G.TASKHUD_TASK_DATA and _G.TASKHUD_DATA_TIMESTAMP then
+                debug_logger.info("STARTUP: Received TaskHUD data via global variables (like manual refresh)")
+                Write.Info("Successfully received task data via global variables!")
+                
+                -- Process the global variable data (same as manual refresh)
+                local task_data_str = tostring(_G.TASKHUD_TASK_DATA)
+                if task_data_str and task_data_str ~= "nil" and #task_data_str > 0 then
+                    tasks.extract_quest_items_from_response(task_data_str)
+                    received_data = true
+                    debug_logger.info("STARTUP: Global variable task data processed successfully on attempt %d after %.1f seconds", attempt, (os.clock() * 1000 - start_time) / 1000)
+                    break
+                else
+                    debug_logger.debug("STARTUP: Global variable data empty or nil")
+                end
+            elseif tasks.check_taskhud_response() then
+                -- Fallback to file-based method if global variables don't work
+                debug_logger.info("STARTUP: Using fallback file-based method")
                 received_data = true
-                Write.Info("Initial task data received successfully!")
-                debug_logger.info("STARTUP: Initial task data received successfully on attempt %d after %.1f seconds", attempt, (os.clock() * 1000 - start_time) / 1000)
+                Write.Info("Task data received via file (fallback method)")
+                debug_logger.info("STARTUP: Initial task data received via fallback method on attempt %d after %.1f seconds", attempt, (os.clock() * 1000 - start_time) / 1000)
                 break
             end
         end
