@@ -88,16 +88,35 @@ end
 
 --- Query tasks from a specific character via DanNet
 native_tasks.get_character_tasks_via_dannet = function(character_name)
-    Write.Debug("Querying tasks from %s via DanNet...", character_name)
+    Write.Debug("Querying basic task data from %s via DanNet...", character_name)
     
-    -- Use DanNet to execute the task detection on the remote character
-    -- This requires the native quest detection function to be available on all clients
+    local tasks = {}
     
-    -- For now, return empty - this would need TaskHUD-style logic deployed to each character
-    -- Or we could query individual task elements directly via DanNet TLO queries
+    -- Query basic task count first
+    local task_count = dannet.query(character_name, "Task.Count", 2000)
+    if not task_count or task_count == "NULL" or tonumber(task_count) == 0 then
+        Write.Debug("  %s: No tasks reported", character_name)
+        return tasks
+    end
     
-    Write.Debug("DanNet task querying not yet implemented for %s", character_name)
-    return {}
+    local num_tasks = tonumber(task_count) or 0
+    Write.Debug("  %s: Reports %d active tasks", character_name, num_tasks)
+    
+    -- Query each task's basic info
+    for i = 1, math.min(num_tasks, 10) do -- Limit to first 10 tasks to avoid spam
+        local task_name = dannet.query(character_name, string.format("Task[%d].Title", i), 1000)
+        if task_name and task_name ~= "NULL" and task_name ~= "" then
+            local task_info = {
+                task_name = task_name,
+                objectives = {} -- TODO: Query objectives in Phase 2
+            }
+            table.insert(tasks, task_info)
+            Write.Debug("    Task %d: %s", i, task_name)
+        end
+    end
+    
+    Write.Debug("  %s: Collected %d task names via DanNet", character_name, #tasks)
+    return tasks
 end
 
 --- Extract quest items from native task data
@@ -391,15 +410,40 @@ native_tasks.initialize = function()
     native_task_data.connected_members = connectivity_results.connected
     native_task_data.connectivity_details = connectivity_results.details
     
-    -- Step 5: Collect quest data from master looter
-    Write.Info("Collecting quest data from master looter: %s", native_task_data.master_looter)
-    local my_tasks = native_tasks.get_current_character_tasks()
-    native_task_data.characters[native_task_data.master_looter] = {
-        tasks = my_tasks,
-        last_updated = os.time()
-    }
+    -- Step 5: Collect quest data from ALL connected members
+    Write.Info("Collecting quest data from all %d connected members...", connectivity_results.connected_count)
+    local total_tasks_collected = 0
+    local characters_with_tasks = 0
     
-    -- Step 6: Extract quest items
+    for _, character_name in ipairs(connectivity_results.connected) do
+        Write.Info("Collecting tasks from %s...", character_name)
+        
+        local character_tasks = {}
+        if character_name == native_task_data.master_looter then
+            -- Current character - use direct access
+            character_tasks = native_tasks.get_current_character_tasks()
+            Write.Info("  %s (current character): %d tasks collected directly", character_name, #character_tasks)
+        else
+            -- Other characters - use DanNet queries for basic task info
+            character_tasks = native_tasks.get_character_tasks_via_dannet(character_name)
+            Write.Info("  %s: %d task names collected via DanNet", character_name, #character_tasks)
+        end
+        
+        if #character_tasks > 0 then
+            native_task_data.characters[character_name] = {
+                tasks = character_tasks,
+                last_updated = os.time()
+            }
+            total_tasks_collected = total_tasks_collected + #character_tasks
+            characters_with_tasks = characters_with_tasks + 1
+            Write.Info("  %s: Stored %d tasks", character_name, #character_tasks)
+        end
+    end
+    
+    Write.Info("Task collection summary: %d tasks from %d/%d characters", 
+        total_tasks_collected, characters_with_tasks, connectivity_results.connected_count)
+    
+    -- Step 6: Extract quest items from all collected task data
     native_tasks.extract_quest_items()
     
     -- Step 7: Final validation report
@@ -414,7 +458,8 @@ native_tasks.initialize = function()
     Write.Info("  Configuration: %s mode", expected_members.type)
     Write.Info("  Members expected: %d", #expected_members.members)
     Write.Info("  Members DanNet connected: %d", connectivity_results.connected_count)
-    Write.Info("  Quest tasks found: %d", #my_tasks)
+    Write.Info("  Total quest tasks collected: %d", total_tasks_collected)
+    Write.Info("  Characters with tasks: %d", characters_with_tasks)
     Write.Info("  Quest items being tracked: %d", quest_item_count)
     
     -- Ensure we always have consistent member tracking
