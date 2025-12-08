@@ -5,6 +5,7 @@
 local mq = require("mq")
 local dannet = require("yalm.lib.dannet")
 local debug_logger = require("yalm2.lib.debug_logger")
+require("yalm2.lib.Write")
 
 local native_tasks = {}
 
@@ -150,6 +151,128 @@ native_tasks.get_character_tasks_via_dannet = function(character_name)
     return {}
 end
 
+--- Extract quest items from native task data
+native_tasks.extract_quest_items = function()
+    Write.Info("Extracting quest items from native task data...")
+    native_task_data.quest_items = {}
+    
+    -- Import quest item patterns from tasks module
+    local quest_item_patterns = {
+        "Sample$", "Essence$", "Fragment$", "Shard$", "Component$", "Part$", "Piece$", 
+        "Token$", "Medallion$", "Emblem$", "Seal$", "Crystal$", "Gem$", "Stone$", 
+        "Ore$", "Metal$", "Wood$", "Bone$", "Scale$", "Claw$", "Fang$", "Hide$", 
+        "Pelt$", "Feather$", "Wing$", "Heart$", "Brain$", "Eye$", "Blood$", "Bile$", 
+        "Dust$", "Powder$"
+    }
+    
+    local quest_items_found = 0
+    
+    -- Process each character's tasks
+    for character_name, char_data in pairs(native_task_data.characters) do
+        if char_data.tasks and #char_data.tasks > 0 then
+            Write.Debug("Processing tasks for %s (%d tasks)", character_name, #char_data.tasks)
+            
+            for _, task in ipairs(char_data.tasks) do
+                if task.objectives then
+                    for _, objective in ipairs(task.objectives) do
+                        if objective.objective and objective.objective ~= "? ? ?" and objective.objective ~= "" then
+                            -- Only process LOOT/COLLECT objectives
+                            local is_loot_objective = objective.objective:match("^Loot ") or objective.objective:match("^Collect ")
+                            
+                            if is_loot_objective then
+                                local needs_item = (objective.status ~= "Done" and objective.status ~= "")
+                                
+                                if needs_item then
+                                    local extracted_item = native_tasks.extract_quest_item_name(objective.objective, quest_item_patterns)
+                                    
+                                    if extracted_item then
+                                        Write.Info("Found quest item need: %s for %s (task: %s)", 
+                                            extracted_item, character_name, task.task_name)
+                                        
+                                        if not native_task_data.quest_items[extracted_item] then
+                                            native_task_data.quest_items[extracted_item] = {
+                                                needed_by = {},
+                                                task_name = task.task_name,
+                                                objective = objective.objective
+                                            }
+                                            quest_items_found = quest_items_found + 1
+                                        end
+                                        
+                                        -- Add character to needed_by list if not already there
+                                        local already_added = false
+                                        for _, char in ipairs(native_task_data.quest_items[extracted_item].needed_by) do
+                                            if char == character_name then
+                                                already_added = true
+                                                break
+                                            end
+                                        end
+                                        
+                                        if not already_added then
+                                            table.insert(native_task_data.quest_items[extracted_item].needed_by, character_name)
+                                        end
+                                        
+                                        debug_logger.quest("NATIVE_QUEST_ITEM: %s -> [%s] task:'%s'", 
+                                            extracted_item, character_name, task.task_name)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    Write.Info("Native quest extraction found %d quest items that need collecting", quest_items_found)
+    debug_logger.info("NATIVE_EXTRACTION: Found %d quest items", quest_items_found)
+end
+
+--- Extract quest item name from objective text (borrowed from tasks.lua)
+native_tasks.extract_quest_item_name = function(objective_text, quest_item_patterns)
+    if not objective_text then return nil end
+    
+    local item_name = nil
+    
+    -- Try various loot patterns
+    item_name = objective_text:match("Loot %d+ (.+) from") or
+                objective_text:match("Loot a (.+) from") or
+                objective_text:match("Loot some (.+) from") or
+                objective_text:match("Collect %d+ (.+) from") or
+                objective_text:match("Collect a few (.+) from") or
+                objective_text:match("Collect some (.+) from") or
+                objective_text:match("Collect %d+ (.+)") or
+                objective_text:match("Collect (.+)") or
+                objective_text:match("Loot %d+ (.+)") or
+                objective_text:match("Loot (.+)")
+    
+    -- Convert plural to singular and apply title case
+    if item_name then
+        local lowercase_item = item_name:lower()
+        if lowercase_item:match("(.+) samples?$") then
+            local base = item_name:match("(.+) [Ss]amples?$")
+            if base then
+                item_name = base .. " Sample"
+            end
+        elseif item_name:lower():match("(.+)s$") and not item_name:lower():match("ss$") then
+            item_name = item_name:gsub("s$", "")
+        end
+        
+        -- Title case
+        item_name = item_name:gsub("(%w)([%w']*)", function(first, rest)
+            return string.upper(first) .. string.lower(rest)
+        end)
+        
+        -- Check against quest item patterns
+        for _, pattern in ipairs(quest_item_patterns) do
+            if item_name:match(pattern) then
+                return item_name
+            end
+        end
+    end
+    
+    return nil
+end
+
 --- Initialize native quest system
 native_tasks.initialize = function()
     Write.Info("Initializing native quest detection system...")
@@ -171,6 +294,9 @@ native_tasks.initialize = function()
         tasks = my_tasks,
         last_updated = os.time()
     }
+    
+    -- Extract quest items from task data
+    native_tasks.extract_quest_items()
     
     Write.Info("Native quest system initialized with %d characters, %d tasks for master looter", 
         #connected, #my_tasks)

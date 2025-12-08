@@ -23,6 +23,8 @@ require("yalm2.lib.database")
 local configuration = require("yalm2.config.configuration")
 local settings = require("yalm2.config.settings")
 local tasks = require("yalm2.core.tasks")
+local native_tasks = require("yalm2.core.native_tasks")
+local quest_interface = require("yalm2.core.quest_interface")
 local state = require("yalm2.config.state")
 
 local looting = require("yalm2.core.looting")
@@ -37,6 +39,8 @@ local function print_help()
 	Write.Help("\axCommands Available:")
 	Write.Help("\t  \ay/yalm help\ax -- Display this help output")
 	Write.Help("\t  \ay/yalm2 reload\ax -- Reloads yalm2")
+	Write.Help("\t  \ay/yalm2 nativequest\ax -- Toggle native quest system on/off")
+	Write.Help("\t  \ay/yalm2 taskrefresh\ax -- Force refresh of quest data")
 
 	configuration.print_type_help(global_settings, configuration.types.command.settings_key)
 end
@@ -57,6 +61,22 @@ local function cmd_handler(...)
 	elseif command == "reload" then
 		Write.Info("Stopping YALM2. Please run: /lua run yalm2")
 		state.terminate = true
+	elseif command == "nativequest" then
+		global_settings.settings.use_native_quest_system = not global_settings.settings.use_native_quest_system
+		Write.Info("Native quest system %s", global_settings.settings.use_native_quest_system and "ENABLED" or "DISABLED")
+		Write.Info("Reload YALM2 for this change to take effect: /yalm2 reload")
+	elseif command == "taskrefresh" then
+		if global_settings.settings.use_native_quest_system then
+			Write.Info("Refreshing native quest data...")
+			native_tasks.refresh_all_characters()
+		else
+			Write.Info("Refreshing external TaskHUD data...")
+			if tasks.request_task_update then
+				tasks.request_task_update()
+			else
+				Write.Warn("External TaskHUD refresh not available")
+			end
+		end
 	elseif loot_command and loot_command.loaded then
 		if not state.command_running then
 			state.command_running = command
@@ -127,8 +147,31 @@ local function initialize()
 
 	Write.loglevel = global_settings.settings.log_level
 	
+	-- Initialize quest interface with both systems
+	quest_interface.initialize(global_settings, tasks, native_tasks)
+	
 	-- Initialize task awareness system
-	tasks.init()
+	if global_settings.settings.use_native_quest_system then
+		Write.Info("Using native quest detection system")
+		debug_logger.info("INIT: Using native quest system instead of external TaskHUD")
+		local success = native_tasks.initialize()
+		if not success then
+			Write.Warn("Native quest system initialization failed - falling back to external TaskHUD")
+			debug_logger.warn("INIT: Native quest system failed, falling back to TaskHUD")
+			-- Initialize external system
+			tasks.init()
+			-- Update quest interface to use external system
+			global_settings.settings.use_native_quest_system = false
+			quest_interface.initialize(global_settings, tasks, native_tasks)
+		else
+			Write.Info("Native quest system initialized successfully")
+			debug_logger.info("INIT: Native quest system ready")
+		end
+	else
+		Write.Info("Using external TaskHUD communication")
+		debug_logger.info("INIT: Using external TaskHUD system")
+		tasks.init()
+	end
 end
 
 local function main()

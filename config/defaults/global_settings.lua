@@ -408,6 +408,7 @@ return {
 		["unmatched_item_rule"] = {
 			["setting"] = "Keep",
 		},
+		["use_native_quest_system"] = false,
 	},
 	["subcommands"] = {
 		["Add"] = {

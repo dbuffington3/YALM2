@@ -4,6 +4,7 @@ local mq = require("mq")
 local evaluate = require("yalm.core.evaluate")
 local inventory = require("yalm.core.inventory")
 local tasks = require("yalm2.core.tasks")
+local quest_interface = require("yalm2.core.quest_interface")
 
 local dannet = require("yalm.lib.dannet")
 local utils = require("yalm.lib.utils")
@@ -62,12 +63,12 @@ looting.give_item = function(member, item_name)
 	mq.cmdf("/advloot shared 1 giveto %s 1", character_name)
 	
 	-- If this was a quest item, refresh the recipient's task data
-	if item_name and tasks.is_quest_item(item_name) then
+	if item_name and quest_interface.is_quest_item(item_name) then
 		debug_logger.quest("QUEST_LOOT: %s received quest item %s - triggering character refresh", character_name, item_name)
 		Write.Info("Quest item %s given to %s - refreshing their task status", item_name, character_name)
 		
 		-- Trigger character-specific task refresh after loot distribution
-		tasks.refresh_character_after_loot(character_name, item_name)
+		quest_interface.refresh_character_after_loot(character_name, item_name)
 	end
 end
 
@@ -102,11 +103,9 @@ looting.get_member_can_loot = function(item, loot, save_slots, dannet_delay, alw
 
 	-- QUEST PRE-CHECK: Handle quest items BEFORE member evaluation
 	local item_name = item and item.Name() or "unknown"
-	local tasks = require("yalm2.core.tasks")
-	local needed_by, task_name, objective = nil, nil, nil
-	if tasks and tasks.get_characters_needing_item then
-		needed_by, task_name, objective = tasks.get_characters_needing_item(item_name)
-	end
+	local needed_by = quest_interface.get_characters_needing_item(item_name)
+	local task_name = nil  -- Quest interface currently doesn't return task details
+	local objective = nil
 	
 	local is_quest_item = (needed_by and #needed_by > 0)
 	if is_quest_item then
@@ -163,14 +162,13 @@ looting.get_member_can_loot = function(item, loot, save_slots, dannet_delay, alw
 								Write.Error("*** EARLY QUEST REFRESH: Attempt %d/%d ***", retry_count, max_retries)
 								
 								-- Capture pre-refresh state for comparison
-								local pre_refresh_needed, pre_refresh_task, pre_refresh_objective = tasks.get_characters_needing_item(item_name)
-								debug_logger.quest("PRE-REFRESH STATE: %s needed by [%s] task '%s'", 
+								local pre_refresh_needed = quest_interface.get_characters_needing_item(item_name)
+								debug_logger.quest("PRE-REFRESH STATE: %s needed by [%s]", 
 									item_name, 
-									pre_refresh_needed and table.concat(pre_refresh_needed, ", ") or "none",
-									pre_refresh_task or "Unknown")
+									pre_refresh_needed and table.concat(pre_refresh_needed, ", ") or "none")
 								
 								-- Request task update
-								tasks.request_task_update()
+								quest_interface.refresh_all_characters()
 								
 								-- CRITICAL: Wait for task updates to complete by monitoring task system stability
 								local wait_start = os.time()
@@ -186,7 +184,7 @@ looting.get_member_can_loot = function(item, loot, save_slots, dannet_delay, alw
 									mq.delay(1000) -- Wait 1 second between checks
 									
 									-- Check current quest state
-									local current_needed_by, current_task_name, current_objective = tasks.get_characters_needing_item(item_name)
+									local current_needed_by = quest_interface.get_characters_needing_item(item_name)
 									local current_needed_str = current_needed_by and table.concat(current_needed_by, ", ") or "none"
 									
 									debug_logger.debug("TASK STATE CHECK: %s needed by [%s] (reading %d)", 
@@ -211,15 +209,10 @@ looting.get_member_can_loot = function(item, loot, save_slots, dannet_delay, alw
 								end
 								
 								if task_update_complete then
-									-- Validate that we got updated quest data
-									if tasks.check_taskhud_response and tasks.check_taskhud_response() then
-										refresh_success = true
-										debug_logger.info("EARLY QUEST REFRESH: Success on attempt %d after task synchronization", retry_count)
-										Write.Error("*** EARLY QUEST REFRESH: Success on attempt %d ***", retry_count)
-									else
-										debug_logger.warn("EARLY QUEST REFRESH: TaskHUD validation failed despite stable data")
-										Write.Warn("*** EARLY QUEST REFRESH: TaskHUD validation failed on attempt %d ***", retry_count)
-									end
+									-- Quest interface handles validation internally
+									refresh_success = true
+									debug_logger.info("EARLY QUEST REFRESH: Success on attempt %d after task synchronization", retry_count)
+									Write.Error("*** EARLY QUEST REFRESH: Success on attempt %d ***", retry_count)
 								else
 									debug_logger.warn("EARLY QUEST REFRESH: Task updates did not stabilize within timeout")
 									Write.Warn("*** EARLY QUEST REFRESH: Failed attempt %d, task data unstable ***", retry_count)
@@ -236,11 +229,11 @@ looting.get_member_can_loot = function(item, loot, save_slots, dannet_delay, alw
 								Write.Warn("*** DANGER: Proceeding without confirmed task updates - items may go to wrong character ***")
 							else
 								-- Re-check quest data after successful synchronized refresh
-								local updated_needed_by, updated_task_name, updated_objective = tasks.get_characters_needing_item(item_name)
+								local updated_needed_by = quest_interface.get_characters_needing_item(item_name)
 								local final_needed_str = updated_needed_by and table.concat(updated_needed_by, ", ") or "none"
 								
-								debug_logger.quest("POST-REFRESH STATE: %s needed by [%s] task '%s'", 
-									item_name, final_needed_str, updated_task_name or "Unknown")
+								debug_logger.quest("POST-REFRESH STATE: %s needed by [%s]", 
+									item_name, final_needed_str)
 								
 								if updated_needed_by and #updated_needed_by > 0 then
 									Write.Error("*** TASK UPDATE CONFIRMED: %s still needed by [%s] ***", item_name, table.concat(updated_needed_by, ", "))
@@ -376,11 +369,8 @@ looting.handle_master_looting = function(global_settings)
 	)
 
 	-- Debug for quest items - check if this item has quest data
-	local tasks = require("yalm2.core.tasks")
-	local needed_by, task_name, objective = nil, nil, nil
-	if tasks and tasks.get_characters_needing_item then
-		needed_by, task_name, objective = tasks.get_characters_needing_item(item_name)
-	end
+	local needed_by = quest_interface.get_characters_needing_item(item_name)
+	local task_name, objective = nil, nil
 	
 	local is_quest_item = (needed_by and #needed_by > 0)
 	
