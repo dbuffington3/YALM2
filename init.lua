@@ -64,7 +64,12 @@ local function cmd_handler(...)
 		state.terminate = true
 	elseif command == "nativequest" then
 		global_settings.settings.use_native_quest_system = not global_settings.settings.use_native_quest_system
-		Write.Info("Native quest system %s", global_settings.settings.use_native_quest_system and "ENABLED" or "DISABLED")
+		
+		-- Save the setting permanently
+		settings.save_global_settings(settings.get_global_settings_filename(), global_settings)
+		
+		Write.Info("Native quest system %s (saved to config)", 
+			global_settings.settings.use_native_quest_system and "ENABLED" or "DISABLED")
 		Write.Info("Reload YALM2 for this change to take effect: /yalm2 reload")
 	elseif command == "taskrefresh" then
 		if global_settings.settings.use_native_quest_system then
