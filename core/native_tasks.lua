@@ -69,18 +69,50 @@ native_tasks.get_current_character_tasks = function()
     return tasks
 end
 
---- Get connected DanNet characters
+--- Get connected DanNet characters using multiple discovery methods
 native_tasks.get_connected_characters = function()
-    Write.Info("Getting connected DanNet characters...")
+    Write.Info("Discovering DanNet connected characters...")
     
-    -- Query DanNet for connected peers
     local connected = {}
+    local all_discovered = {}  -- Track all characters found by any method
     
-    -- Method 1: Try to get DanNet observer list (if available)
-    -- This would need to be implemented based on DanNet's API
+    -- Method 1: Try to get all DanNet peers directly
+    local peer_count = mq.TLO.DanNet.PeerCount() or 0
+    Write.Info("DanNet reports %d total peers", peer_count)
     
-    -- Method 2: Try group members first
+    if peer_count > 0 then
+        -- Try DanNet.Peers TLO if available
+        if mq.TLO.DanNet.Peers then
+            local peers_string = mq.TLO.DanNet.Peers() or ""
+            Write.Debug("DanNet.Peers string: '%s'", peers_string)
+            
+            if peers_string and peers_string ~= "" then
+                for peer in string.gmatch(peers_string, "([^,]+)") do
+                    local clean_peer = peer:match("^%s*(.-)%s*$") -- trim whitespace
+                    if clean_peer and clean_peer ~= "" then
+                        all_discovered[clean_peer] = "DanNet.Peers"
+                        Write.Debug("Found peer from DanNet.Peers: %s", clean_peer)
+                    end
+                end
+            end
+        end
+        
+        -- Try DanNet.Peer(index) iteration as fallback
+        if next(all_discovered) == nil then
+            Write.Debug("Trying DanNet.Peer(index) iteration...")
+            for i = 1, peer_count do
+                local peer_name = mq.TLO.DanNet.Peer(i)()
+                if peer_name and peer_name ~= "" then
+                    all_discovered[peer_name] = "DanNet.Peer(" .. i .. ")"
+                    Write.Debug("Found peer from Peer(%d): %s", i, peer_name)
+                end
+            end
+        end
+    end
+    
+    -- Method 2: Group members with DanNet connectivity test
     if mq.TLO.Group.Members() > 0 then
+        Write.Debug("Testing %d group members for DanNet connectivity", mq.TLO.Group.Members())
         for i = 0, mq.TLO.Group.Members() do
             local member_name = nil
             if i == 0 then
@@ -90,49 +122,68 @@ native_tasks.get_connected_characters = function()
             end
             
             if member_name and member_name ~= "" then
-                -- Test DanNet connectivity
-                local response = dannet.query(member_name, "Me.Name", 1000)
-                if response and response ~= "NULL" then
-                    table.insert(connected, member_name)
-                    Write.Debug("Found connected character: %s", member_name)
+                if not all_discovered[member_name] then
+                    all_discovered[member_name] = "Group.Member(" .. i .. ")"
                 end
             end
         end
     end
     
-    -- Method 3: Try raid members if in raid
+    -- Method 3: Raid members with DanNet connectivity test
     if mq.TLO.Raid.Members() > 0 then
-        for i = 0, mq.TLO.Raid.Members() do
-            local member_name = nil
-            if i == 0 then
-                member_name = mq.TLO.Me.DisplayName()
-            else
-                member_name = mq.TLO.Raid.Member(i).DisplayName()
-            end
-            
+        Write.Debug("Testing %d raid members for DanNet connectivity", mq.TLO.Raid.Members())
+        for i = 1, mq.TLO.Raid.Members() do
+            local member_name = mq.TLO.Raid.Member(i).DisplayName()
             if member_name and member_name ~= "" then
-                -- Check if not already in connected list
-                local already_added = false
-                for _, existing in ipairs(connected) do
-                    if existing == member_name then
-                        already_added = true
-                        break
-                    end
-                end
-                
-                if not already_added then
-                    -- Test DanNet connectivity
-                    local response = dannet.query(member_name, "Me.Name", 1000)
-                    if response and response ~= "NULL" then
-                        table.insert(connected, member_name)
-                        Write.Debug("Found connected raid character: %s", member_name)
-                    end
+                if not all_discovered[member_name] then
+                    all_discovered[member_name] = "Raid.Member(" .. i .. ")"
                 end
             end
         end
     end
     
-    Write.Info("Found %d connected DanNet characters: [%s]", #connected, table.concat(connected, ", "))
+    -- Test DanNet connectivity for all discovered characters
+    local discovered_count = 0
+    for _ in pairs(all_discovered) do
+        discovered_count = discovered_count + 1
+    end
+    Write.Info("Testing DanNet connectivity for %d discovered characters...", discovered_count)
+    
+    for character_name, source in pairs(all_discovered) do
+        Write.Debug("Testing DanNet connectivity to %s (found via %s)...", character_name, source)
+        
+        local response = dannet.query(character_name, "Me.Name", 2000)
+        if response and response ~= "NULL" and response ~= "" then
+            table.insert(connected, character_name)
+            Write.Info("✅ %s is DanNet connected (via %s)", character_name, source)
+            
+            -- Get additional diagnostic info
+            local zone = dannet.query(character_name, "Zone.ShortName", 1000) or "unknown"
+            local level = dannet.query(character_name, "Me.Level", 1000) or "unknown"
+            Write.Debug("   %s info - Zone: %s, Level: %s", character_name, zone, level)
+        else
+            Write.Warn("❌ %s failed DanNet connectivity test (found via %s)", character_name, source)
+        end
+    end
+    
+    -- Report results with diagnostics
+    local total_discovered = 0
+    for _ in pairs(all_discovered) do
+        total_discovered = total_discovered + 1
+    end
+    
+    Write.Info("DanNet Discovery Summary:")
+    Write.Info("  Total peers reported by DanNet: %d", peer_count)
+    Write.Info("  Characters discovered by all methods: %d", total_discovered)
+    Write.Info("  Characters with confirmed DanNet connectivity: %d", #connected)
+    Write.Info("  Connected characters: [%s]", table.concat(connected, ", "))
+    
+    if #connected < peer_count then
+        Write.Warn("⚠️  Found %d connected but DanNet reports %d peers - investigating discrepancy", 
+            #connected, peer_count)
+        Write.Info("This may indicate characters not in group/raid or connectivity issues")
+    end
+    
     native_task_data.connected_characters = connected
     return connected
 end

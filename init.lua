@@ -41,6 +41,7 @@ local function print_help()
 	Write.Help("\t  \ay/yalm2 reload\ax -- Reloads yalm2")
 	Write.Help("\t  \ay/yalm2 nativequest\ax -- Toggle native quest system on/off")
 	Write.Help("\t  \ay/yalm2 taskrefresh\ax -- Force refresh of quest data")
+	Write.Help("\t  \ay/yalm2 dannetdiag\ax -- Run DanNet connectivity diagnostics")
 
 	configuration.print_type_help(global_settings, configuration.types.command.settings_key)
 end
@@ -77,6 +78,10 @@ local function cmd_handler(...)
 				Write.Warn("External TaskHUD refresh not available")
 			end
 		end
+	elseif command == "dannetdiag" then
+		Write.Info("Running DanNet connectivity diagnostics...")
+		local dannet_diag = require("yalm2.diagnostics.dannet_discovery")
+		dannet_diag.run_full_diagnostics()
 	elseif loot_command and loot_command.loaded then
 		if not state.command_running then
 			state.command_running = command
