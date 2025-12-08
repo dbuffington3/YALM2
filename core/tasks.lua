@@ -10,6 +10,7 @@ local task_data = {
     characters = {}, -- character_name -> { tasks = {...}, last_updated = timestamp }
     missing_tasks = {}, -- task_name -> { missing_characters = {...}, objectives = {...} }
     quest_items = {}, -- item_name -> { needed_by = {character_names...}, task_name = "..." }
+    quest_history = {}, -- item_name -> { last_needed_by = {...}, last_seen = timestamp, confidence = high/low }
 }
 
 -- Configuration for quest item detection
@@ -731,15 +732,45 @@ tasks.get_characters_needing_item = function(item_name)
     debug_logger.debug("GET_CHARACTERS_NEEDING: Checking for item '%s'", item_name)
     
     local quest_info = task_data.quest_items[item_name]
+    local history_info = task_data.quest_history[item_name]
+    
     if quest_info then
+        -- Current data shows someone needs it
         debug_logger.quest("QUEST_INFO_FOUND: %s needed by [%s] for task '%s' - objective: %s", 
             item_name, 
             quest_info.needed_by and table.concat(quest_info.needed_by, ", ") or "none",
             quest_info.task_name or "Unknown",
             quest_info.objective or "Unknown")
+        
+        -- Update history with current data
+        task_data.quest_history[item_name] = {
+            last_needed_by = quest_info.needed_by or {},
+            last_seen = os.time(),
+            confidence = "high"
+        }
+        
         return quest_info.needed_by, quest_info.task_name, quest_info.objective
     else
-        debug_logger.debug("NO_QUEST_INFO: Item '%s' not found in quest data", item_name)
+        debug_logger.debug("NO_QUEST_INFO: Item '%s' not found in current quest data", item_name)
+        
+        -- Check history for recent needs (TaskHUD reliability check)
+        if history_info and history_info.last_needed_by and #history_info.last_needed_by > 0 then
+            local time_since_last_seen = os.time() - (history_info.last_seen or 0)
+            
+            -- If someone needed this item recently (within 60 seconds), be cautious
+            if time_since_last_seen < 60 then
+                Write.Warn("TASKHUD_RELIABILITY: %s was needed by [%s] only %d seconds ago - TaskHUD may be inconsistent", 
+                    item_name, 
+                    table.concat(history_info.last_needed_by, ", "), 
+                    time_since_last_seen)
+                debug_logger.warn("TASKHUD_INCONSISTENCY: %s recently needed by [%s], now missing from TaskHUD data", 
+                    item_name, table.concat(history_info.last_needed_by, ", "))
+                
+                -- Return empty for safety, but log the concern
+                Write.Info("Safety measure: Treating %s as not needed due to TaskHUD inconsistency concerns", item_name)
+                return {}, nil, nil
+            end
+        end
     end
     return {}, nil, nil
 end
