@@ -435,16 +435,6 @@ evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_ite
 		end
 	end
 
-	-- QUEST ITEM INTELLIGENCE: Check if this is a quest item that's no longer needed
-	if preference == nil and loot_item ~= nil then
-		local has_quest_flag = loot_item.Quest and loot_item.Quest()
-		if has_quest_flag then
-			-- This is a quest item but no one currently needs it
-			Write.Info("Quest item %s no longer needed - leaving it behind", loot_item.Name())
-			preference = { setting = "Leave", list = {}, data = { former_quest_item = true } }
-		end
-	end
-
 	if preference == nil and unmatched_item_rule then
 		if item and item.Name() == "Blighted Blood Sample" then
 			Write.Error("*** QUEST DEBUG: Blighted Blood Sample has no preference, using unmatched_item_rule: %s ***", 
