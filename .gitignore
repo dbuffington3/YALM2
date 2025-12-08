@@ -1,0 +1,16 @@
+# YALM2 Git Ignore
+*.log
+*.tmp
+*~
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.backup
+*.bak
+
+# Character-specific settings (optional - you might want to track these)
+# config/settings/char_*
+
+# Debug files
+debug_*
