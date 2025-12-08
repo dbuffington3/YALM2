@@ -145,16 +145,17 @@ looting.get_member_can_loot = function(item, loot, save_slots, dannet_delay, alw
 							member = test_member
 							Write.Error("*** QUEST WINNER: %s ***", member.CleanName())
 							
-							-- CRITICAL: Add quest refresh logic here since we're returning early
-							Write.Error("*** EARLY QUEST REFRESH: Requesting task update after quest item ***")
+							-- LIGHTWEIGHT: Trust cached quest data instead of heavy real-time validation  
+							Write.Info("*** QUEST LOOT: Using cached data to reduce TaskHUD pressure ***")
 							
-							-- Wait for and validate the refresh to prevent stale quest data
-							debug_logger.quest("EARLY QUEST DETECTION: Starting synchronized refresh for %s needed by [%s]", 
-								item_name, table.concat(needed_by, ", "))
+							-- Skip complex refresh cycles that cause timing issues with TaskHUD
+							debug_logger.quest("FAST_LOOT: Trusting recent quest data for %s -> %s (avoids TaskHUD race conditions)", 
+								item_name, member.CleanName())
 							
-							local refresh_success = false
-							local max_retries = 3
-							local retry_count = 0
+							-- Proceed with trusted data - much faster and more reliable
+							local refresh_success = true  -- Skip the refresh loop entirely
+							local max_retries = 1
+							local retry_count = 1
 							
 							while not refresh_success and retry_count < max_retries do
 								retry_count = retry_count + 1
