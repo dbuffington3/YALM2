@@ -7,11 +7,12 @@ local evaluate = require("yalm.core.evaluate")
 
 local LIP = require("yalm.lib.LIP")
 local utils = require("yalm.lib.utils")
+local Write = require("yalm.lib.Write")
 
 local command = {}
 
 command.help = function(global_settings, char_settings, type, args)
-	Write.Help("\at[\ax\ay/yalm command help\ax\at]\ax")
+	Write.Help("\at[\ax\ay/yalm2 command help\ax\at]\ax")
 	Write.Help("\axSubcommands Available:")
 	Write.Help("\t  \ayhelp\ax -- Display this help output")
 	Write.Help("\t  \ayadvloot\ax -- Converts Lootly file")

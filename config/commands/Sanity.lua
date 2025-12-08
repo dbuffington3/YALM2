@@ -2,6 +2,7 @@
 local mq = require("mq")
 
 local looting = require("yalm.core.looting")
+local Write = require("yalm.lib.Write")
 
 local function action(global_settings, char_settings, args)
 	Write.Info("am_i_master_looter: %s", looting.am_i_master_looter())

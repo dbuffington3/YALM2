@@ -2,6 +2,7 @@ local mq = require("mq")
 
 local evaluate = require("yalm.core.evaluate")
 local helpers = require("yalm.core.helpers")
+local Write = require("yalm.lib.Write")
 
 local function get_free_bank_count()
 	local handle = "GuildBankWnd/GBANK_BankCountLabel"

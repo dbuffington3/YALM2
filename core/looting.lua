@@ -483,7 +483,7 @@ looting.handle_master_looting = function(global_settings)
 					
 					if not refresh_success then
 						Write.Error("*** QUEST REFRESH: All attempts failed! Quest data may be stale ***")
-						Write.Warn("*** Continuing with potentially stale quest data - manual /yalm taskinfo refresh recommended ***")
+						Write.Warn("*** Continuing with potentially stale quest data - manual /yalm2 taskinfo refresh recommended ***")
 					else
 						-- Re-check quest data after successful refresh to see if anyone still needs this item type
 						local updated_needed_by, updated_task_name, updated_objective = tasks.get_characters_needing_item(item_name)

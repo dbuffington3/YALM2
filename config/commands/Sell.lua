@@ -3,6 +3,7 @@ local mq = require("mq")
 
 local evaluate = require("yalm.core.evaluate")
 local helpers = require("yalm.core.helpers")
+local Write = require("yalm.lib.Write")
 
 local function can_sell_item(item, global_settings, char_settings)
 	if item.Name() then

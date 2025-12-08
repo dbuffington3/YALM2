@@ -2,6 +2,7 @@ local tasks = require("yalm2.core.tasks")
 local evaluate = require("yalm.core.evaluate")
 local looting = require("yalm.core.looting")
 local mq = require("mq")
+local Write = require("yalm.lib.Write")
 
 local function action(global_settings, char_settings, args)
 	Write.Info("=== LOOT EVALUATION DEBUG TEST ===")

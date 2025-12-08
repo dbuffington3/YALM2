@@ -7,6 +7,7 @@ local Item = require("yalm.definitions.Item")
 
 local database = require("yalm.lib.database")
 local utils = require("yalm.lib.utils")
+local Write = require("yalm.lib.Write")
 
 local function get_item_preference(item, global_settings, char_settings)
 	if item.Name() then

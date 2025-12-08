@@ -14,7 +14,7 @@ local function action(type, subcommands, global_settings, char_settings, args)
 		end
 	end
 
-	Write.Help("\at[\ax\ay/yalm %s help\ax\at]\ax", type)
+	Write.Help("\at[\ax\ay/yalm2 %s help\ax\at]\ax", type)
 
 	configuration.print_type_help(loot_subcommands, "subcommands", type)
 end

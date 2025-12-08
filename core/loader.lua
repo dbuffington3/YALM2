@@ -3,6 +3,7 @@ local mq = require("mq")
 local lfs = require("lfs")
 
 local configuration = require("yalm.config.configuration")
+local Write = require("yalm.lib.Write")
 
 local loader = {}
 

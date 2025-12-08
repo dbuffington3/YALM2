@@ -1,4 +1,5 @@
 local mq = require("mq")
+local Write = require("yalm.lib.Write")
 
 local function action(global_settings, char_settings, args)
 	if not args[2] then

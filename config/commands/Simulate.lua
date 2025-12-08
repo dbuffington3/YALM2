@@ -8,6 +8,7 @@ local Item = require("yalm.definitions.Item")
 
 local database = require("yalm.lib.database")
 local utils = require("yalm.lib.utils")
+local Write = require("yalm.lib.Write")
 
 local function action(global_settings, char_settings, args)
 	local item, item_name = nil, nil

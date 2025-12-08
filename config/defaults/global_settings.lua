@@ -23,13 +23,13 @@ return {
 		["Category"] = {
 			["name"] = "Category",
 			["trigger"] = "category",
-			["help"] = "Manage categories. Type \ay/yalm category help\ax for more information.",
+			["help"] = "Manage categories. Type \ay/yalm2 category help\ax for more information.",
 			["category"] = "Configuration",
 		},
 		["Character"] = {
 			["name"] = "Character",
 			["trigger"] = "character",
-			["help"] = "Manage character. Type \ay/yalm character help\ax for more information.",
+			["help"] = "Manage character. Type \ay/yalm2 character help\ax for more information.",
 			["category"] = "Configuration",
 		},
 		["Check"] = {
@@ -41,19 +41,19 @@ return {
 		["Command"] = {
 			["name"] = "Command",
 			["trigger"] = "command",
-			["help"] = "Manage commands. Type \ay/yalm command help\ax for more information.",
+			["help"] = "Manage commands. Type \ay/yalm2 command help\ax for more information.",
 			["category"] = "Configuration",
 		},
 		["Condition"] = {
 			["name"] = "Condition",
 			["trigger"] = "condition",
-			["help"] = "Manage conditions. Type \ay/yalm condition help\ax for more information.",
+			["help"] = "Manage conditions. Type \ay/yalm2 condition help\ax for more information.",
 			["category"] = "Configuration",
 		},
 		["Convert"] = {
 			["name"] = "Convert",
 			["trigger"] = "convert",
-			["help"] = "Converts other loot systems to YALM. Type \ay/yalm convert help\ax for more information",
+			["help"] = "Converts other loot systems to YALM. Type \ay/yalm2 convert help\ax for more information",
 			["category"] = "Configuration",
 		},
 		["Destroy"] = {
@@ -71,19 +71,19 @@ return {
 		["Helper"] = {
 			["name"] = "Helper",
 			["trigger"] = "helper",
-			["help"] = "Manage helpers. Type \ay/yalm helper help\ax for more information.",
+			["help"] = "Manage helpers. Type \ay/yalm2 helper help\ax for more information.",
 			["category"] = "Configuration",
 		},
 		["Preference"] = {
 			["name"] = "Preference",
 			["trigger"] = "preference",
-			["help"] = "Manage preferences. Type \ay/yalm preference help\ax for more information.",
+			["help"] = "Manage preferences. Type \ay/yalm2 preference help\ax for more information.",
 			["category"] = "Configuration",
 		},
 		["Rule"] = {
 			["name"] = "Rule",
 			["trigger"] = "rule",
-			["help"] = "Manage rules. Type \ay/yalm rule help\ax for more information.",
+			["help"] = "Manage rules. Type \ay/yalm2 rule help\ax for more information.",
 			["category"] = "Configuration",
 		},
 		["Sell"] = {
@@ -102,7 +102,7 @@ return {
 		["Settings"] = {
 			["name"] = "Settings",
 			["trigger"] = "setting",
-			["help"] = "Manage settings. Type \ay/yalm settings help\ax for more information.",
+			["help"] = "Manage settings. Type \ay/yalm2 settings help\ax for more information.",
 			["category"] = "Configuration",
 		},
 		["Simulate"] = {
@@ -114,7 +114,7 @@ return {
 		["Subcommand"] = {
 			["name"] = "Subcommand",
 			["trigger"] = "subcommand",
-			["help"] = "Manage subcommands. Type \ay/yalm subcommand help\ax for more information.",
+			["help"] = "Manage subcommands. Type \ay/yalm2 subcommand help\ax for more information.",
 			["category"] = "Configuration",
 		},
 		["TaskInfo"] = {

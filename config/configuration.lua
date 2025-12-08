@@ -122,7 +122,7 @@ configuration.print_type_help = function(global_settings, settings_key, type)
 		for i in ipairs(entry) do
 			local command = entry[i]
 			if command.loaded then
-				local message = "\t  \ay/yalm"
+				local message = "\t  \ay/yalm2"
 
 				if type then
 					message = ("%s %s"):format(message, type)

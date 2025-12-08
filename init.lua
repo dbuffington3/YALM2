@@ -37,7 +37,7 @@ local global_settings, char_settings
 local function print_help()
 	Write.Help("\at[\ax\ayYet Another Loot Manager v%s\ax\at]\ax", state.version)
 	Write.Help("\axCommands Available:")
-	Write.Help("\t  \ay/yalm help\ax -- Display this help output")
+	Write.Help("\t  \ay/yalm2 help\ax -- Display this help output")
 	Write.Help("\t  \ay/yalm2 reload\ax -- Reloads yalm2")
 	Write.Help("\t  \ay/yalm2 nativequest\ax -- Toggle native quest system on/off")
 	Write.Help("\t  \ay/yalm2 taskrefresh\ax -- Force refresh of quest data")
@@ -73,8 +73,9 @@ local function cmd_handler(...)
 		Write.Info("Reload YALM2 for this change to take effect: /yalm2 reload")
 	elseif command == "taskrefresh" then
 		if global_settings.settings.use_native_quest_system then
-			Write.Info("Refreshing native quest data...")
+			Write.Debug("Manual quest refresh requested")
 			native_tasks.refresh_all_characters()
+			Write.Info("Quest data refresh requested")  -- Single success message
 		else
 			Write.Info("Refreshing external TaskHUD data...")
 			if tasks.request_task_update then
@@ -104,6 +105,12 @@ local function cmd_handler(...)
 end
 
 local function initialize()
+	-- Clean up any existing native quest instances on startup
+	Write.Info("Cleaning up any existing native quest scripts...")
+	mq.cmd('/dgga /lua stop yalm2/yalm2_native_quest')
+	mq.cmd('/lua stop yalm2/yalm2_native_quest')
+	mq.delay(1000)  -- Give time for cleanup
+
 	utils.plugin_check()
 
 	Database.database = assert(Database.OpenDatabase())
@@ -187,7 +194,7 @@ end
 local function main()
 	initialize()
 
-	while not state.terminate and mq.TLO.MacroQuest.GameState() == "INGAME" do
+		while not state.terminate and mq.TLO.MacroQuest.GameState() == "INGAME" do
 		if not mq.TLO.Me.Dead() then
 			global_settings, char_settings = settings.reload_settings(global_settings, char_settings)
 
@@ -199,11 +206,36 @@ local function main()
 			looting.handle_master_looting(global_settings)
 			looting.handle_solo_looting(global_settings)
 			looting.handle_personal_loot()
+			
+			-- Process native quest system background tasks (TaskHUD style)
+			if global_settings.settings.use_native_quest_system then
+				native_tasks.process()
+			end
 		end
 
 		mq.doevents()
 		mq.delay(global_settings.settings.frequency)
 	end
 end
+
+-- Cleanup function for graceful shutdown
+local function cleanup()
+	Write.Info("YALM2 shutting down...")
+	
+	-- Global cleanup of native quest instances
+	Write.Info("Cleaning up native quest instances on all characters...")
+	mq.cmd('/dgga /lua stop yalm2/yalm2_native_quest')
+	mq.cmd('/lua stop yalm2/yalm2_native_quest')
+	
+	-- If using native quest system, shutdown collectors
+	if global_settings and global_settings.use_native_quest_system then
+		local native_tasks = require("yalm2.core.native_tasks")
+		native_tasks.shutdown_collectors()
+	end
+	
+	Write.Info("YALM2 shutdown complete")
+end
+
+-- Note: MQ2 will call cleanup automatically when script ends
 
 main()
