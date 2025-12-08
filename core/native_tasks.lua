@@ -87,24 +87,13 @@ native_tasks.get_connected_characters = function()
             Write.Debug("DanNet.Peers string: '%s'", peers_string)
             
             if peers_string and peers_string ~= "" then
-                for peer in string.gmatch(peers_string, "([^,]+)") do
+                -- DanNet uses pipe separators, not commas
+                for peer in string.gmatch(peers_string, "([^|]+)") do
                     local clean_peer = peer:match("^%s*(.-)%s*$") -- trim whitespace
                     if clean_peer and clean_peer ~= "" then
                         all_discovered[clean_peer] = "DanNet.Peers"
                         Write.Debug("Found peer from DanNet.Peers: %s", clean_peer)
                     end
-                end
-            end
-        end
-        
-        -- Try DanNet.Peer(index) iteration as fallback
-        if next(all_discovered) == nil then
-            Write.Debug("Trying DanNet.Peer(index) iteration...")
-            for i = 1, peer_count do
-                local peer_name = mq.TLO.DanNet.Peer(i)()
-                if peer_name and peer_name ~= "" then
-                    all_discovered[peer_name] = "DanNet.Peer(" .. i .. ")"
-                    Write.Debug("Found peer from Peer(%d): %s", i, peer_name)
                 end
             end
         end

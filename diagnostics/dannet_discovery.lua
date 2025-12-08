@@ -28,8 +28,8 @@ dannet_diagnostics.get_all_dannet_peers = function()
             Write.Info("DanNet.Peers returned: '%s'", peers_string)
             
             if peers_string and peers_string ~= "" then
-                -- Parse peer list (assuming comma-separated)
-                for peer in string.gmatch(peers_string, "([^,]+)") do
+                -- Parse peer list (DanNet uses pipe separators)
+                for peer in string.gmatch(peers_string, "([^|]+)") do
                     local clean_peer = peer:match("^%s*(.-)%s*$") -- trim whitespace
                     if clean_peer and clean_peer ~= "" then
                         table.insert(all_peers, clean_peer)
@@ -41,16 +41,9 @@ dannet_diagnostics.get_all_dannet_peers = function()
             Write.Warn("DanNet.Peers TLO not available")
         end
         
-        -- Method 1b: Try iterating DanNet.Peer(index) if available
+        -- Method 1b: DanNet.Peer(index) doesn't exist, skip this method
         if #all_peers == 0 then
-            Write.Info("Trying DanNet.Peer(index) iteration...")
-            for i = 1, peer_count do
-                local peer_name = mq.TLO.DanNet.Peer(i)()
-                if peer_name and peer_name ~= "" then
-                    table.insert(all_peers, peer_name)
-                    Write.Info("Found peer from Peer(%d): %s", i, peer_name)
-                end
-            end
+            Write.Warn("DanNet.Peer(index) TLO not available - this is normal")
         end
         
         -- Method 1c: Try DanNet.Peer[name] validation with known names

@@ -19,7 +19,8 @@ if mq.TLO.DanNet.Peers then
     
     if peers_string and peers_string ~= "" then
         local count = 0
-        for peer in string.gmatch(peers_string, "([^,]+)") do
+        -- DanNet uses pipe separators, not commas
+        for peer in string.gmatch(peers_string, "([^|]+)") do
             local clean_peer = peer:match("^%s*(.-)%s*$")
             if clean_peer and clean_peer ~= "" then
                 count = count + 1
@@ -32,20 +33,8 @@ else
     print("DanNet.Peers() TLO not available")
 end
 
--- Method 3: Try individual peer iteration
-print("\nTrying DanNet.Peer(index):")
-if peer_count > 0 then
-    for i = 1, math.min(peer_count, 20) do -- Limit to first 20 to avoid spam
-        local peer_name = mq.TLO.DanNet.Peer(i)()
-        if peer_name and peer_name ~= "" then
-            print(string.format("  Peer[%d]: %s", i, peer_name))
-        else
-            print(string.format("  Peer[%d]: NULL/empty", i))
-        end
-    end
-else
-    print("  No peers to iterate")
-end
+-- Method 3: Try individual peer access (DanNet.Peer(index) doesn't exist)
+print("\nNote: DanNet.Peer(index) TLO doesn't exist - using peer list instead")
 
 -- Method 4: Check group/raid membership
 print("\nGroup/Raid Information:")
