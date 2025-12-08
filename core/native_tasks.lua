@@ -69,98 +69,21 @@ native_tasks.get_current_character_tasks = function()
     return tasks
 end
 
---- Get group/raid members with DanNet connectivity for quest monitoring
+--- Get validated connected characters (uses cached results from initialization)
 native_tasks.get_connected_characters = function()
-    Write.Info("Finding group/raid members with DanNet connectivity for quest monitoring...")
-    
-    local connected = {}
-    local group_raid_members = {}
-    
-    -- Collect all group members
-    if mq.TLO.Group.Members() > 0 then
-        Write.Info("Checking %d group members for DanNet connectivity", mq.TLO.Group.Members() + 1)
-        for i = 0, mq.TLO.Group.Members() do
-            local member_name = nil
-            if i == 0 then
-                member_name = mq.TLO.Me.DisplayName()
-            else
-                member_name = mq.TLO.Group.Member(i).DisplayName()
-            end
-            
-            if member_name and member_name ~= "" then
-                table.insert(group_raid_members, {name = member_name, source = "Group", index = i})
-            end
-        end
+    -- Return the already-validated connected members from initialization
+    if native_task_data.connected_members then
+        Write.Debug("Returning %d pre-validated connected members: [%s]", 
+            #native_task_data.connected_members, table.concat(native_task_data.connected_members, ", "))
+        return native_task_data.connected_members
     end
     
-    -- Collect all raid members (if in raid, this replaces group logic)
-    if mq.TLO.Raid.Members() > 0 then
-        Write.Info("In raid - checking %d raid members for DanNet connectivity", mq.TLO.Raid.Members())
-        group_raid_members = {} -- Clear group members, raid takes precedence
-        
-        -- Add self first
-        table.insert(group_raid_members, {name = mq.TLO.Me.DisplayName(), source = "Raid", index = 0})
-        
-        -- Add all raid members
-        for i = 1, mq.TLO.Raid.Members() do
-            local member_name = mq.TLO.Raid.Member(i).DisplayName()
-            if member_name and member_name ~= "" then
-                -- Avoid duplicates (self might be in raid member list too)
-                local already_added = false
-                for _, existing in ipairs(group_raid_members) do
-                    if existing.name == member_name then
-                        already_added = true
-                        break
-                    end
-                end
-                
-                if not already_added then
-                    table.insert(group_raid_members, {name = member_name, source = "Raid", index = i})
-                end
-            end
-        end
-    end
-    
-    -- If not in group or raid, just use self
-    if #group_raid_members == 0 then
-        Write.Info("Not in group or raid - monitoring only current character")
-        table.insert(group_raid_members, {name = mq.TLO.Me.DisplayName(), source = "Solo", index = 0})
-    end
-    
-    Write.Info("Testing DanNet connectivity for %d %s members...", #group_raid_members, 
-        mq.TLO.Raid.Members() > 0 and "raid" or (mq.TLO.Group.Members() > 0 and "group" or "solo"))
-    
-    -- Test DanNet connectivity for each group/raid member ONLY
-    for _, member in ipairs(group_raid_members) do
-        Write.Debug("Testing DanNet connectivity to %s (%s %d)...", member.name, member.source, member.index)
-        
-        local response = dannet.query(member.name, "Me.Name", 2000)
-        if response and response ~= "NULL" and response ~= "" then
-            table.insert(connected, member.name)
-            Write.Info("✅ %s is DanNet connected (%s member)", member.name, member.source)
-            
-            -- Get additional info for debugging
-            local zone = dannet.query(member.name, "Zone.ShortName", 1000) or "unknown"
-            local class = dannet.query(member.name, "Me.Class.ShortName", 1000) or "unknown"
-            Write.Debug("   %s: %s in %s", member.name, class, zone)
-        else
-            Write.Warn("❌ %s not responding to DanNet (%s member) - cannot monitor their quests", 
-                member.name, member.source)
-        end
-    end
-    
-    Write.Info("Quest Monitoring Summary:")
-    Write.Info("  %s members: %d", mq.TLO.Raid.Members() > 0 and "Raid" or "Group", #group_raid_members)
-    Write.Info("  DanNet connected for quest monitoring: %d", #connected)
-    Write.Info("  Will monitor quests for: [%s]", table.concat(connected, ", "))
-    
-    if #connected < #group_raid_members then
-        Write.Warn("⚠️  %d %s members are not DanNet connected - their quests will not be monitored", 
-            #group_raid_members - #connected, mq.TLO.Raid.Members() > 0 and "raid" or "group")
-    end
-    
-    native_task_data.connected_characters = connected
-    return connected
+    -- Fallback: re-validate if data not available (shouldn't happen after proper initialization)
+    Write.Warn("Connected members not cached - re-validating (this shouldn't happen)")
+    local composition = native_tasks.get_expected_group_composition()
+    local connectivity = native_tasks.validate_dannet_connectivity(composition)
+    native_task_data.connected_members = connectivity.connected
+    return connectivity.connected
 end
 
 --- Query tasks from a specific character via DanNet
@@ -299,33 +222,210 @@ native_tasks.extract_quest_item_name = function(objective_text, quest_item_patte
     return nil
 end
 
---- Initialize native quest system
-native_tasks.initialize = function()
-    Write.Info("Initializing native quest detection system...")
+--- Get expected group/raid composition before testing connectivity
+native_tasks.get_expected_group_composition = function()
+    local composition = {
+        type = "Solo",
+        members = {},
+        names = {}
+    }
     
-    -- Set master looter
-    native_task_data.master_looter = mq.TLO.Me.DisplayName()
-    
-    -- Get group/raid members with DanNet connectivity
-    local connected = native_tasks.get_connected_characters()
-    
-    if #connected == 0 then
-        Write.Warn("No group/raid members have DanNet connectivity - quest detection will be limited to current character only")
-        return false
+    -- Check raid first (takes precedence over group)
+    if mq.TLO.Raid.Members() > 0 then
+        composition.type = "Raid"
+        
+        -- Add self
+        table.insert(composition.members, {name = mq.TLO.Me.DisplayName(), index = 0})
+        table.insert(composition.names, mq.TLO.Me.DisplayName())
+        
+        -- Add raid members
+        for i = 1, mq.TLO.Raid.Members() do
+            local member_name = mq.TLO.Raid.Member(i).DisplayName()
+            if member_name and member_name ~= "" then
+                -- Avoid duplicates
+                local already_added = false
+                for _, existing in ipairs(composition.members) do
+                    if existing.name == member_name then
+                        already_added = true
+                        break
+                    end
+                end
+                
+                if not already_added then
+                    table.insert(composition.members, {name = member_name, index = i})
+                    table.insert(composition.names, member_name)
+                end
+            end
+        end
+    elseif mq.TLO.Group.Members() > 0 then
+        composition.type = "Group"
+        
+        -- Add all group members including self
+        for i = 0, mq.TLO.Group.Members() do
+            local member_name = nil
+            if i == 0 then
+                member_name = mq.TLO.Me.DisplayName()
+            else
+                member_name = mq.TLO.Group.Member(i).DisplayName()
+            end
+            
+            if member_name and member_name ~= "" then
+                table.insert(composition.members, {name = member_name, index = i})
+                table.insert(composition.names, member_name)
+            end
+        end
+    else
+        -- Solo mode
+        table.insert(composition.members, {name = mq.TLO.Me.DisplayName(), index = 0})
+        table.insert(composition.names, mq.TLO.Me.DisplayName())
     end
     
-    -- Get master looter's tasks (authoritative source)
+    return composition
+end
+
+--- Test DanNet connectivity for all expected members
+native_tasks.validate_dannet_connectivity = function(expected_members)
+    local results = {
+        connected = {},
+        missing = {},
+        connected_count = 0,
+        details = {}
+    }
+    
+    Write.Info("Testing DanNet connectivity for %d expected %s members...", 
+        #expected_members.members, expected_members.type)
+    
+    for _, member in ipairs(expected_members.members) do
+        Write.Debug("Testing DanNet connectivity to %s...", member.name)
+        
+        local response = dannet.query(member.name, "Me.Name", 3000) -- Longer timeout for reliability
+        if response and response ~= "NULL" and response ~= "" then
+            table.insert(results.connected, member.name)
+            results.connected_count = results.connected_count + 1
+            
+            -- Get additional details for validation
+            local zone = dannet.query(member.name, "Zone.ShortName", 1000) or "unknown"
+            local class = dannet.query(member.name, "Me.Class.ShortName", 1000) or "unknown"
+            local level = dannet.query(member.name, "Me.Level", 1000) or "unknown"
+            
+            results.details[member.name] = {
+                zone = zone,
+                class = class,
+                level = level,
+                connected = true
+            }
+            
+            Write.Info("✅ %s - %s %s in %s (DanNet OK)", member.name, level, class, zone)
+        else
+            table.insert(results.missing, member.name)
+            results.details[member.name] = {
+                connected = false,
+                error = "No DanNet response"
+            }
+            Write.Warn("❌ %s - No DanNet response", member.name)
+        end
+    end
+    
+    return results
+end
+
+--- Initialize solo mode (fallback when no group/raid)
+native_tasks.initialize_solo_mode = function()
+    Write.Info("Initializing native quest system in solo mode...")
+    
+    -- Initialize for solo character only
+    native_task_data.characters = {}
+    native_task_data.quest_items = {}
+    native_task_data.master_looter = mq.TLO.Me.DisplayName()
+    native_task_data.expected_members = {mq.TLO.Me.DisplayName()}
+    native_task_data.connected_members = {mq.TLO.Me.DisplayName()}
+    
+    -- Get current character's tasks
     local my_tasks = native_tasks.get_current_character_tasks()
     native_task_data.characters[native_task_data.master_looter] = {
         tasks = my_tasks,
         last_updated = os.time()
     }
     
-    -- Extract quest items from task data
+    -- Extract quest items
     native_tasks.extract_quest_items()
     
-    Write.Info("Native quest system initialized with %d characters, %d tasks for master looter", 
-        #connected, #my_tasks)
+    Write.Info("Solo mode initialized with %d quest tasks", #my_tasks)
+    return true
+end
+
+--- Initialize native quest system with comprehensive validation
+native_tasks.initialize = function()
+    Write.Info("=== Native Quest System Startup Validation ===")
+    
+    -- Step 1: Determine expected group/raid composition
+    local expected_members = native_tasks.get_expected_group_composition()
+    Write.Info("Group composition: %s with %d members", expected_members.type, #expected_members.members)
+    Write.Info("Expected members: [%s]", table.concat(expected_members.names, ", "))
+    
+    if #expected_members.members == 1 and expected_members.type == "Solo" then
+        return native_tasks.initialize_solo_mode()
+    end
+    
+    -- Step 2: Test DanNet connectivity for ALL expected members with retries
+    Write.Info("Validating DanNet connectivity (this may take a moment)...")
+    local connectivity_results = native_tasks.validate_dannet_connectivity(expected_members)
+    
+    -- Step 3: Report connectivity results
+    Write.Info("DanNet Connectivity Results:")
+    Write.Info("  Expected %s members: %d", expected_members.type, #expected_members.members)  
+    Write.Info("  Successfully connected: %d", connectivity_results.connected_count)
+    
+    if connectivity_results.connected_count < #expected_members.members then
+        Write.Warn("  Missing DanNet connectivity: [%s]", table.concat(connectivity_results.missing, ", "))
+        Write.Warn("  ⚠️ Quest monitoring will be limited to connected members only")
+    else
+        Write.Info("  ✅ ALL %s members have DanNet connectivity", expected_members.type)
+    end
+    
+    -- Step 4: Initialize with validated data
+    native_task_data.characters = {}
+    native_task_data.quest_items = {}
+    native_task_data.master_looter = mq.TLO.Me.DisplayName()
+    native_task_data.expected_members = expected_members.names
+    native_task_data.connected_members = connectivity_results.connected
+    native_task_data.connectivity_details = connectivity_results.details
+    
+    -- Step 5: Collect quest data from master looter
+    Write.Info("Collecting quest data from master looter: %s", native_task_data.master_looter)
+    local my_tasks = native_tasks.get_current_character_tasks()
+    native_task_data.characters[native_task_data.master_looter] = {
+        tasks = my_tasks,
+        last_updated = os.time()
+    }
+    
+    -- Step 6: Extract quest items
+    native_tasks.extract_quest_items()
+    
+    -- Step 7: Final validation report
+    local quest_item_count = 0
+    if native_task_data.quest_items then
+        for _ in pairs(native_task_data.quest_items) do
+            quest_item_count = quest_item_count + 1
+        end
+    end
+    
+    Write.Info("=== Native Quest System Startup Complete ===")
+    Write.Info("  Configuration: %s mode", expected_members.type)
+    Write.Info("  Members expected: %d", #expected_members.members)
+    Write.Info("  Members DanNet connected: %d", connectivity_results.connected_count)
+    Write.Info("  Quest tasks found: %d", #my_tasks)
+    Write.Info("  Quest items being tracked: %d", quest_item_count)
+    
+    -- Ensure we always have consistent member tracking
+    if connectivity_results.connected_count == 0 then
+        Write.Error("❌ No DanNet connectivity to any group/raid members!")
+        Write.Error("❌ Quest item distribution will not work properly!")
+        return false
+    end
+    
+    Write.Info("✅ Native quest system operational with %d/%d members connected", 
+        connectivity_results.connected_count, #expected_members.members)
     
     return true
 end
