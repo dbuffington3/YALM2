@@ -526,17 +526,19 @@ tasks.extract_quest_items_from_response = function(content)
                         if is_completed then
                             completed_objectives = completed_objectives + 1
                         elseif objective_text and objective_text ~= "? ? ?" and objective_text ~= "" and status_text and status_text ~= "" and status_text ~= "Done" then
-                            Write.Info("Processing active objective for %s: '%s' [Status: %s]", character_name, objective_text, status_text)
-                            
                             -- Only process LOOT/COLLECT objectives, not DELIVER/SPEAK/KILL objectives
                             local is_loot_objective = objective_text:match("^Loot ") or objective_text:match("^Collect ")
+                            
+                            -- Only log loot objectives to reduce chatter
+                            if is_loot_objective then
+                                Write.Info("Processing active LOOT objective for %s: '%s' [Status: %s]", character_name, objective_text, status_text)
+                            end
                             
                             if not is_loot_objective then
                                 Write.Debug("Skipping non-loot objective: '%s' (Deliver/Kill/Speak objectives don't need item collection)", objective_text)
                             elseif status_text == "Done" then
                                 Write.Debug("Skipping COMPLETED loot objective: '%s'", objective_text)
                             else
-                                Write.Info("Testing ACTIVE LOOT objective for %s: '%s'", character_name, objective_text)
                                 local extracted_item = tasks.extract_quest_item_name(objective_text)
                                 Write.Info("Item extraction result for %s: '%s'", character_name, extracted_item or "nil")
                             
