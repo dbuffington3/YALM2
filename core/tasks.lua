@@ -445,21 +445,6 @@ tasks.extract_quest_items_from_response = function(content)
     Write.Debug("Extracting quest items directly from response...")
     debug_logger.info("STARTUP: QUEST_EXTRACTION_START: Processing TaskHUD response (length: %d)", #content)
     
-    -- BLOODBONE DEBUG: Check if Bloodbone data is in the response
-    if content:find("Bloodbone Skeleton Blood Sample") then
-        Write.Error("*** BLOODBONE RAW DEBUG: Found 'Bloodbone Skeleton Blood Sample' in TaskHUD response ***")
-        -- Extract just the section around Bloodbone for debugging
-        local start_pos = content:find("Bloodbone Skeleton Blood Sample") - 100
-        local end_pos = content:find("Bloodbone Skeleton Blood Sample") + 200
-        start_pos = math.max(1, start_pos)
-        end_pos = math.min(#content, end_pos)
-        local snippet = content:sub(start_pos, end_pos)
-        Write.Error("*** BLOODBONE RAW SNIPPET: %s ***", snippet)
-        debug_logger.error("BLOODBONE_RAW: %s", snippet)
-    else
-        Write.Error("*** BLOODBONE DEBUG: 'Bloodbone Skeleton Blood Sample' NOT FOUND in TaskHUD response ***")
-    end
-    
     -- CRITICAL: Clear old cached quest items to prevent stale data
     task_data.quest_items = {}
     Write.Debug("Cleared old quest items cache")
@@ -514,14 +499,6 @@ tasks.extract_quest_items_from_response = function(content)
                         
                         -- Only process objectives that are NOT completed
                         local is_completed = (status_text == "Done")
-                        
-                        -- ENHANCED DEBUGGING: Log ALL objectives for Bloodbone Skeleton Blood Sample
-                        if objective_text and objective_text:find("Bloodbone Skeleton Blood Sample") then
-                            Write.Error("*** BLOODBONE DEBUG: %s objective: '%s' status: '%s' is_completed: %s ***", 
-                                character_name, objective_text or "nil", status_text or "nil", tostring(is_completed))
-                            debug_logger.error("BLOODBONE_DEBUG: %s - objective='%s' status='%s' completed=%s", 
-                                character_name, objective_text or "nil", status_text or "nil", tostring(is_completed))
-                        end
                         
                         if is_completed then
                             completed_objectives = completed_objectives + 1

@@ -41,12 +41,6 @@ local function get_valid_member(tlo, index)
 end
 
 evaluate.check_can_loot = function(member, item, loot, save_slots, dannet_delay, always_loot, unmatched_item_rule)
-	-- Debug: Log function entry for Blighted Blood Sample only
-	if item and item.Name() == "Blighted Blood Sample" then
-		Write.Error("*** DEBUG: check_can_loot called for Blighted Blood Sample, member: %s ***", 
-			member and member.CleanName() or "unknown")
-	end
-	
 	local char_settings =
 		evaluate.get_member_char_settings(member, save_slots, dannet_delay, always_loot, unmatched_item_rule)
 
@@ -55,14 +49,7 @@ evaluate.check_can_loot = function(member, item, loot, save_slots, dannet_delay,
 	local char_always_loot = char_settings.settings.always_loot
 	local char_unmatched_item_rule = char_settings.settings.unmatched_item_rule
 
-	if item and item.Name() == "Blighted Blood Sample" then
-		Write.Error("*** DEBUG: About to call get_loot_preference for Blighted Blood Sample ***")
-	end
 	local preference = evaluate.get_loot_preference(item, loot, char_settings, char_unmatched_item_rule)
-	if item and item.Name() == "Blighted Blood Sample" then
-		Write.Error("*** DEBUG: get_loot_preference returned for Blighted Blood Sample: %s ***", 
-			preference and (preference.setting or "unknown setting") or "nil")
-	end
 
 	local can_loot = evaluate.check_loot_preference(preference, loot)
 
@@ -300,17 +287,11 @@ end
 evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_item_rule)
 	local preference
 
-	-- Debug for unmatched items
-	Write.Error("*** DEBUG: get_loot_preference called with item: '%s' ***", item and item.Name() or "nil")
-	if item and item.Name() == "Blighted Blood Sample" then
-		Write.Error("*** QUEST DEBUG: Processing Blighted Blood Sample ***")
-	end
+
 
 	local loot_item = evaluate.get_loot_item(item)
 	
-	-- Debug: Always log function entry
-	Write.Info("=== get_loot_preference called for item: %s ===", item and item.Name() or "unknown")
-	Write.Info("loot_item status: %s", loot_item and "found" or "nil")
+
 
 	-- PRIORITY 1: Check if item is needed for quests (quest flag OR in our task data)
 	if loot_item ~= nil then
@@ -336,14 +317,7 @@ evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_ite
 			end
 		end
 		
-		if item_name == "Blighted Blood Sample" then
-			Write.Error("*** SAFE QUEST CHECK: %s - in_task_data: %s ***", item_name, tostring(in_task_data))
-		end
-		
 		if has_quest_flag or in_task_data then
-			if item_name == "Blighted Blood Sample" then
-				Write.Error("*** QUEST LOGIC ACTIVATED for %s ***", item_name)
-			end
 		
 		if needed_by and #needed_by > 0 then
 			-- Filter needed_by to only include group/raid members
@@ -403,22 +377,12 @@ evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_ite
 
 	if loot_item ~= nil and preference == nil then
 		-- Debug for specific item
-		if item and item.Name() == "Blighted Blood Sample" then
-			Write.Error("*** LOOT RULES DEBUG: Checking loot rules for Blighted Blood Sample ***")
-		end
-		
 		if char_settings[configuration.types.item.settings_key] then
 			preference = evaluate.check_loot_items(loot_item, loot.helpers, char_settings[configuration.types.item.settings_key])
-			if item and item.Name() == "Blighted Blood Sample" and preference then
-				Write.Error("*** FOUND in char items: %s ***", preference.setting or "unknown")
-			end
 		end
 
 		if preference == nil and loot.items then
 			preference = evaluate.check_loot_items(loot_item, loot.helpers, loot.items)
-			if item and item.Name() == "Blighted Blood Sample" and preference then
-				Write.Error("*** FOUND in global items: %s ***", preference.setting or "unknown")
-			end
 		end
 
 		if preference == nil and char_settings[configuration.types.rule.settings_key] then
@@ -429,17 +393,11 @@ evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_ite
 				loot.rules,
 				char_settings[configuration.types.rule.settings_key]
 			)
-			if item and item.Name() == "Blighted Blood Sample" and preference then
-				Write.Error("*** FOUND in char rules: %s ***", preference.setting or "unknown")
-			end
+
 		end
 	end
 
 	if preference == nil and unmatched_item_rule then
-		if item and item.Name() == "Blighted Blood Sample" then
-			Write.Error("*** QUEST DEBUG: Blighted Blood Sample has no preference, using unmatched_item_rule: %s ***", 
-				unmatched_item_rule and unmatched_item_rule.setting or "nil")
-		end
 		preference = unmatched_item_rule
 	end
 
