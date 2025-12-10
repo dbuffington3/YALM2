@@ -1,9 +1,9 @@
 --- @type Mq
 local mq = require("mq")
 
-local dannet = require("yalm.lib.dannet")
+local dannet = require("yalm2.lib.dannet")
 
-local utils = require("yalm.lib.utils")
+local utils = require("yalm2.lib.utils")
 
 local inventory = {}
 

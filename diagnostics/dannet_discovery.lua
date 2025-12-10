@@ -3,7 +3,7 @@
 --- Provides detailed diagnostics and comparison with group/raid membership
 
 local mq = require("mq")
-local dannet = require("yalm.lib.dannet")
+local dannet = require("yalm2.lib.dannet")
 require("yalm2.lib.Write")
 
 local dannet_diagnostics = {}

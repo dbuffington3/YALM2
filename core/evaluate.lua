@@ -1,16 +1,16 @@
 local mq = require("mq")
 
-local configuration = require("yalm.config.configuration")
-local settings = require("yalm.config.settings")
+local configuration = require("yalm2.config.configuration")
+local settings = require("yalm2.config.settings")
 
-local inventory = require("yalm.core.inventory")
+local inventory = require("yalm2.core.inventory")
 
-local Item = require("yalm.definitions.Item")
+local Item = require("yalm2.definitions.Item")
 
-local database = require("yalm.lib.database")
-local dannet = require("yalm.lib.dannet")
-local utils = require("yalm.lib.utils")
-local Write = require("yalm.lib.Write")
+require("yalm2.lib.database")  -- Initialize the global Database table
+local dannet = require("yalm2.lib.dannet")
+local utils = require("yalm2.lib.utils")
+local Write = require("yalm2.lib.Write")
 local debug_logger = require("yalm2.lib.debug_logger")
 local quest_interface = require("yalm2.core.quest_interface")
 
@@ -269,11 +269,11 @@ evaluate.get_loot_item = function(item)
 		
 		debug_logger.info("DB_LOOKUP: AdvLoot item - ID: %s, Name: '%s'", tostring(item_id), tostring(item_name))
 		
-		loot_item = Item:new(nil, database.QueryDatabaseForItemId(item_id))
+		loot_item = Item:new(nil, YALM2_Database.QueryDatabaseForItemId(item_id))
 
 		if not loot_item.item_db then
 			debug_logger.info("DB_LOOKUP: Item ID %s not found, trying by name: '%s'", tostring(item_id), tostring(item_name))
-			loot_item = Item:new(nil, database.QueryDatabaseForItemName(item_name))
+			loot_item = Item:new(nil, YALM2_Database.QueryDatabaseForItemName(item_name))
 		else
 			debug_logger.info("DB_LOOKUP: Item ID %s found in database successfully", tostring(item_id))
 		end
@@ -490,6 +490,10 @@ evaluate.is_item_in_saved_slot = function(item, char_settings)
 end
 
 evaluate.is_valid_preference = function(loot_preferences, preference)
+	if not loot_preferences then
+		return false
+	end
+	
 	for name in pairs(loot_preferences) do
 		if name == preference.setting then
 			return true

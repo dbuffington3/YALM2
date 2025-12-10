@@ -26,10 +26,10 @@ for _, search_term in ipairs(test_strings) do
     print("Testing: '" .. search_term .. "'")
     
     -- Try exact match first
-    local query = string.format('SELECT name FROM raw_item_data_315 WHERE name = "%s" LIMIT 1', search_term)
+    local query = string.format('SELECT name FROM raw_item_data WHERE name = "%s" LIMIT 1', search_term)
     local found = false
     for row in db:nrows(query) do
-        print("  ✓ EXACT MATCH in raw_item_data_315: " .. row.name)
+        print("  ✓ EXACT MATCH in raw_item_data: " .. row.name)
         found = true
         break
     end
@@ -37,11 +37,11 @@ for _, search_term in ipairs(test_strings) do
     if not found then
         -- Try wildcard search
         local like_term = search_term:gsub("%%", "")
-        query = string.format("SELECT name FROM raw_item_data_315 WHERE name LIKE '%%%s%%' LIMIT 5", like_term)
+        query = string.format("SELECT name FROM raw_item_data WHERE name LIKE '%%%s%%' LIMIT 5", like_term)
         local matches = 0
         for row in db:nrows(query) do
             if matches == 0 then
-                print("  ✓ WILDCARD MATCHES in raw_item_data_315:")
+                print("  ✓ WILDCARD MATCHES in raw_item_data:")
             end
             print("    - " .. row.name)
             matches = matches + 1

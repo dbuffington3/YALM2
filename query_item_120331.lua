@@ -2,7 +2,7 @@
 local mq = require("mq")
 
 -- Load the database module
-local database = require("yalm.lib.database")
+local database = require("yalm2.lib.database")
 
 print("Opening database...")
 database.database = database.OpenDatabase()

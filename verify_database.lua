@@ -45,17 +45,6 @@ end
 
 if not found then
     print("Item 50814 NOT found in raw_item_data")
-    
-    -- Check raw_item_data_315
-    print("\n=== Checking raw_item_data_315 ===")
-    local query315 = "SELECT id, name, norent FROM raw_item_data_315 WHERE id = 50814 LIMIT 1;"
-    for row in db:nrows(query315) do
-        print("Found in raw_item_data_315:")
-        print("  ID:", row.id)
-        print("  Name:", row.name or "NULL")
-        print("  norent:", row.norent or "NULL")
-        found = true
-    end
 end
 
 -- Count total records
@@ -64,16 +53,12 @@ for row in db:nrows("SELECT COUNT(*) as count FROM raw_item_data;") do
     print("raw_item_data total records:", row.count)
 end
 
-for row in db:nrows("SELECT COUNT(*) as count FROM raw_item_data_315;") do
-    print("raw_item_data_315 total records:", row.count)
-end
-
 db:close()
 print("\n=== Database Check Complete ===")
 
 -- Also test the YALM2 database interface
 print("\n=== Testing YALM2 Database Interface ===")
-local Database = require("yalm.lib.database")
+local Database = require("yalm2.lib.database")
 if Database.database then
     print("YALM2 database connection exists")
     local item_data = Database.QueryDatabaseForItemId(50814)

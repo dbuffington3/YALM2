@@ -1,5 +1,5 @@
 
-local database = require("yalm.lib.database")
+local database = require("yalm2.lib.database")
 
 -- Check if we need to initialize the database (like in init.lua)
 if not Database or not Database.database then

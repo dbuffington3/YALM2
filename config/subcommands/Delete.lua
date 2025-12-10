@@ -1,10 +1,10 @@
 ---@type Mq
 local mq = require("mq")
 
-local configuration = require("yalm.config.configuration")
-local settings = require("yalm.config.settings")
+local configuration = require("yalm2.config.configuration")
+local settings = require("yalm2.config.settings")
 
-local utils = require("yalm.lib.utils")
+local utils = require("yalm2.lib.utils")
 
 local function action(type, subcommands, global_settings, char_settings, args)
 	if not args[3] then

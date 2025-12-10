@@ -1,14 +1,15 @@
 ---@type Mq
 local mq = require("mq")
 
-local evaluate = require("yalm.core.evaluate")
-local inventory = require("yalm.core.inventory")
+local evaluate = require("yalm2.core.evaluate")
+local inventory = require("yalm2.core.inventory")
 local tasks = require("yalm2.core.tasks")
 local quest_interface = require("yalm2.core.quest_interface")
 
-local dannet = require("yalm.lib.dannet")
-local utils = require("yalm.lib.utils")
+local dannet = require("yalm2.lib.dannet")
+local utils = require("yalm2.lib.utils")
 local debug_logger = require("yalm2.lib.debug_logger")
+require("yalm2.lib.database")  -- Initialize the global Database table
 
 local looting = {}
 
@@ -100,13 +101,24 @@ looting.give_item = function(member, item_name)
 	
 	mq.cmdf("/advloot shared 1 giveto %s 1", character_name)
 	
-	-- If this was a quest item, refresh the recipient's task data
+	-- If this was a quest item, refresh the recipient's task data and update quest globals
 	if item_name and quest_interface.is_quest_item(item_name) then
 		debug_logger.quest("QUEST_LOOT: %s received quest item %s - triggering character refresh", character_name, item_name)
 		Write.Info("Quest item %s given to %s - refreshing their task status", item_name, character_name)
 		
 		-- Trigger character-specific task refresh after loot distribution
 		quest_interface.refresh_character_after_loot(character_name, item_name)
+		
+		-- Force rebuild of quest data from current task UI state
+		-- This ensures we have up-to-date quantities since the UI has been refreshed
+		debug_logger.quest("QUEST_LOOT: Rebuilding quest data globals after loot distribution")
+		mq.delay(500)  -- Give the UI a moment to update
+		
+		-- Call back to native quest system to rebuild the global with fresh data
+		if _G.YALM2_REBUILD_QUEST_DATA then
+			_G.YALM2_REBUILD_QUEST_DATA()
+			debug_logger.quest("QUEST_LOOT: Quest data globals rebuilt from UI")
+		end
 	end
 end
 
@@ -506,10 +518,9 @@ looting.handle_master_looting = function(global_settings)
 	if item_id and item_id > 0 then
 		debug_logger.info("QUEST_ITEM_CHECK: %s has valid ID: %d, attempting database query", item_name, item_id)
 		
-		local database = require("yalm2.lib.database")
 		local item_db = nil
 		local db_success, db_error = pcall(function()
-			item_db = database.QueryDatabaseForItemId(item_id)
+			item_db = YALM2_Database.QueryDatabaseForItemId(item_id)
 		end)
 		
 		if not db_success then

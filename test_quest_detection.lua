@@ -1,7 +1,7 @@
 -- Test Quest Item Detection
 local mq = require("mq")
-local Write = require("yalm.lib.Write")
-local database = require("yalm.lib.database")
+local Write = require("yalm2.lib.Write")
+local database = require("yalm2.lib.database")
 local quest_interface = require("yalm2.core.quest_interface")
 
 print("=== QUEST ITEM DETECTION TEST ===")

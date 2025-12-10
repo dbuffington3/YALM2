@@ -32,9 +32,9 @@ local mq = require("mq")
 
 local looting = require("yalm2.core.looting")
 local evaluate = require("yalm2.core.evaluate")
-local database = require("yalm.lib.database")
-local dannet = require("yalm.lib.dannet")
-local Write = require("yalm.lib.Write")
+require("yalm2.lib.database")  -- Initialize the global Database table
+local dannet = require("yalm2.lib.dannet")
+local Write = require("yalm2.lib.Write")
 local debug_logger = require("yalm2.lib.debug_logger")
 
 local simulator = {}
@@ -81,7 +81,7 @@ local function find_item_by_name(search_name)
         local escaped = search_term:gsub("'", "''")
         
         local query = string.format("SELECT * FROM raw_item_data WHERE name = '%s' LIMIT 1", escaped)
-        for row in database.database:nrows(query) do
+        for row in YALM2_Database.database:nrows(query) do
             Write.Debug("Found: %s (ID: %d)", row.name, row.id)
             return row.id, row.name
         end
@@ -91,7 +91,7 @@ local function find_item_by_name(search_name)
     Write.Debug("Exact matches failed, trying LIKE search for: %s", search_name)
     local like_pattern = search_name:lower():gsub("s$", "")  -- Remove trailing 's'
     local q_like = string.format("SELECT * FROM raw_item_data WHERE LOWER(name) LIKE '%%%s%%' LIMIT 1", like_pattern:gsub("'", "''"))
-    for row in database.database:nrows(q_like) do
+    for row in YALM2_Database.database:nrows(q_like) do
         Write.Debug("Found via LIKE: %s (ID: %d)", row.name, row.id)
         return row.id, row.name
     end
@@ -102,7 +102,7 @@ end
 -- Find item by ID
 local function find_item_by_id(item_id)
     local query = string.format("SELECT * FROM raw_item_data WHERE id = %d LIMIT 1", item_id)
-    for row in database.database:nrows(query) do
+    for row in YALM2_Database.database:nrows(query) do
         return row.id, row.name
     end
     
@@ -136,7 +136,7 @@ function simulator.simulate_loot(item_name_or_id, is_id, force_quest)
     -- Verify the item is actually in the database with this ID
     local verification_query = string.format("SELECT id, name FROM raw_item_data WHERE id = %d LIMIT 1", item_id)
     local verified_id, verified_name = nil, nil
-    for row in database.database:nrows(verification_query) do
+    for row in YALM2_Database.database:nrows(verification_query) do
         verified_id = row.id
         verified_name = row.name
         break

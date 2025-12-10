@@ -3,17 +3,17 @@ local mq = require("mq")
 
 local sql = require("lsqlite3")
 
-local utils = require("yalm.lib.utils")
+local utils = require("yalm2.lib.utils")
 local debug_logger = require("yalm2.lib.debug_logger")
 
-Database = {
+YALM2_Database = {
 	database = nil,
 	path = ("%s/MQ2LinkDB.db"):format(mq.TLO.MacroQuest.Path("resources")),
 }
 
-Database.OpenDatabase = function(path)
+YALM2_Database.OpenDatabase = function(path)
 	if not path then
-		path = Database.path
+		path = YALM2_Database.path
 	end
 	if not utils.file_exists(path) then
 		print("ERROR: Database file does not exist [" .. path .. "]")
@@ -31,27 +31,47 @@ Database.OpenDatabase = function(path)
 	return db
 end
 
-Database.QueryDatabaseForItemId = function(item_id)
+YALM2_Database.QueryDatabaseForItemId = function(item_id)
 	local item_db = nil
 	
-	if not Database.database then
-		debug_logger.error("DATABASE: Database.database is nil!")
+	if not YALM2_Database.database then
+		debug_logger.error("DATABASE: YALM2_Database.database is nil!")
+		print("ERROR: YALM2_Database.database is nil - connection not initialized")
 		return nil
 	end
 	
 	local query = string.format("SELECT * FROM raw_item_data WHERE id = %d LIMIT 1", item_id)
 	debug_logger.debug("DATABASE: Query: %s", query)
+	print("DEBUG: Executing query: " .. query)
+	print("DEBUG: Database connection object: " .. tostring(YALM2_Database.database))
 	
 	local found = false
-	for row in Database.database:nrows(query) do
-		item_db = row
-		found = true
-		debug_logger.debug("DATABASE: Found item id=%d, name=%s", row.id or 0, row.name or "nil")
-		break
+	local row_count = 0
+	
+	local success, err = pcall(function()
+		for row in YALM2_Database.database:nrows(query) do
+			row_count = row_count + 1
+			print("DEBUG: Got row #" .. row_count .. ": id=" .. tostring(row.id) .. ", name=" .. tostring(row.name))
+			item_db = row
+			found = true
+			debug_logger.debug("DATABASE: Found item id=%d, name=%s", row.id or 0, row.name or "nil")
+			break
+		end
+	end)
+	
+	print("DEBUG: pcall success: " .. tostring(success) .. ", error: " .. tostring(err))
+	print("DEBUG: Row count: " .. row_count)
+	print("DEBUG: Found: " .. tostring(found))
+	
+	if not success then
+		print("ERROR: Query failed: " .. tostring(err))
+		debug_logger.error("DATABASE: Query error: %s", tostring(err))
+		return nil
 	end
 	
 	if not found then
 		debug_logger.warn("DATABASE: Item id %d not found in raw_item_data", item_id)
+		print("DEBUG: Item id " .. tostring(item_id) .. " not found in raw_item_data")
 	end
 	
 	return item_db
@@ -62,8 +82,8 @@ local function query_item_name(item_name)
 	local item_db = nil
 	local search_variations = { item_name }
 	
-	if not Database.database then
-		debug_logger.error("DATABASE: Database.database is nil!")
+	if not YALM2_Database.database then
+		debug_logger.error("DATABASE: YALM2_Database.database is nil!")
 		return nil
 	end
 	
@@ -87,7 +107,7 @@ local function query_item_name(item_name)
 		debug_logger.debug("DATABASE: Trying variation %d: %s", idx, search_term)
 		
 		local found = false
-		for row in Database.database:nrows(query) do
+		for row in YALM2_Database.database:nrows(query) do
 			item_db = row
 			found = true
 			debug_logger.debug("DATABASE: Found item id=%d, name=%s", row.id or 0, row.name or "nil")
@@ -102,16 +122,16 @@ local function query_item_name(item_name)
 	return item_db
 end
 
--- Assign function to Database table
-Database.QueryDatabaseForItemName = query_item_name
+-- Assign function to YALM2_Database table
+YALM2_Database.QueryDatabaseForItemName = query_item_name
 
 -- Refresh database connection to ensure we get updated data
-Database.RefreshConnection = function()
-	if Database.database then
-		Database.database:close()
+YALM2_Database.RefreshConnection = function()
+	if YALM2_Database.database then
+		YALM2_Database.database:close()
 	end
-	Database.database = Database.OpenDatabase()
-	return Database.database
+	YALM2_Database.database = YALM2_Database.OpenDatabase()
+	return YALM2_Database.database
 end
 
-return Database
+return YALM2_Database

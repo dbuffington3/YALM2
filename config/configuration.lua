@@ -1,4 +1,4 @@
-local utils = require("yalm.lib.utils")
+local utils = require("yalm2.lib.utils")
 
 local configuration = {
 	types = {

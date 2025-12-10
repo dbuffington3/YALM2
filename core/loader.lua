@@ -2,8 +2,8 @@
 local mq = require("mq")
 local lfs = require("lfs")
 
-local configuration = require("yalm.config.configuration")
-local Write = require("yalm.lib.Write")
+local configuration = require("yalm2.config.configuration")
+local Write = require("yalm2.lib.Write")
 
 local loader = {}
 
@@ -12,7 +12,7 @@ loader.filename = function(name, loot_type)
 end
 
 loader.packagename = function(name, loot_type)
-	return ("yalm.config.%s.%s"):format(loot_type, name)
+	return ("yalm2.config.%s.%s"):format(loot_type, name)
 end
 
 loader.unload_package = function(name, loot_type)

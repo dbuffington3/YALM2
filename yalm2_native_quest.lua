@@ -63,12 +63,12 @@ If you change anything, verify these still match:
 local mq = require("mq")
 local actors = require("actors")
 local ImGui = require('ImGui')
-local Write = require("yalm.lib.Write")
-require("yalm.lib.database")  -- Load the database module to set up the global Database table
+local Write = require("yalm2.lib.Write")
+require("yalm2.lib.database")  -- Load the database module to set up the global YALM2_Database table
 
--- Initialize database connection using the global Database variable
-Database.database = Database.OpenDatabase()
-if not Database.database then
+-- Initialize database connection using the global YALM2_Database variable
+YALM2_Database.database = YALM2_Database.OpenDatabase()
+if not YALM2_Database.database then
     Write.Error("Failed to open database")
     mq.exit()
 end
@@ -455,18 +455,8 @@ local function displayGUI()
                             if db_item then break end
                             local escaped = search_term:gsub("'", "''")
                             
-                            -- Try 315 table
-                            local q1 = string.format("SELECT * FROM raw_item_data_315 WHERE name = '%s' LIMIT 1", escaped)
-                            for row in Database.database:nrows(q1) do
-                                db_item = row
-                                break
-                            end
-                            
-                            if db_item then break end
-                            
-                            -- Try old table
-                            local q2 = string.format("SELECT * FROM raw_item_data WHERE name = '%s' LIMIT 1", escaped)
-                            for row in Database.database:nrows(q2) do
+                            local query = string.format("SELECT * FROM raw_item_data WHERE name = '%s' LIMIT 1", escaped)
+                            for row in YALM2_Database.database:nrows(query) do
                                 db_item = row
                                 break
                             end
@@ -807,19 +797,17 @@ local function manual_refresh_with_messages(show_messages)
                     -- CRITICAL: Use objective.objective NOT objective.text! 
                     -- The get_tasks() function creates objective.objective field
                     -- UI code uses objective.objective, manual refresh MUST match
-                    if objective and objective.objective then
-                        -- Smart quest item extraction - extract proper item names and validate against database
-                        local item_name = extract_quest_item_from_objective(objective.objective)
-                        
-                        if item_name then
-                            Write.Debug("MANUAL_REFRESH: Extracted potential item: '%s'", item_name)
-                            -- Validate against database to ensure it's a real item
-                            if not Database.database then
-                                Write.Error("Database not available for item validation")
-                                return
-                            end
+                        if objective and objective.objective then
+                            -- Smart quest item extraction - extract proper item names and validate against database
+                            local item_name = extract_quest_item_from_objective(objective.objective)
                             
-                            -- Inline database query - look up item in database with fuzzy matching
+                            if item_name then
+                                Write.Debug("MANUAL_REFRESH: Extracted potential item: '%s'", item_name)
+                                -- Validate against database to ensure it's a real item
+                                if not YALM2_Database.database then
+                                    Write.Error("Database not available for item validation")
+                                    return
+                                end                            -- Inline database query - look up item in database with fuzzy matching
                             local db_item = nil
                             local search_variations = { item_name }
                             
@@ -839,18 +827,8 @@ local function manual_refresh_with_messages(show_messages)
                                 
                                 local escaped = search_term:gsub("'", "''")
                                 
-                                -- Try 315 table
-                                local q1 = string.format("SELECT * FROM raw_item_data_315 WHERE name = '%s' LIMIT 1", escaped)
-                                for row in Database.database:nrows(q1) do
-                                    db_item = row
-                                    break
-                                end
-                                
-                                if db_item then break end
-                                
-                                -- Try old table
-                                local q2 = string.format("SELECT * FROM raw_item_data WHERE name = '%s' LIMIT 1", escaped)
-                                for row in Database.database:nrows(q2) do
+                                local query = string.format("SELECT * FROM raw_item_data WHERE name = '%s' LIMIT 1", escaped)
+                                for row in YALM2_Database.database:nrows(query) do
                                     db_item = row
                                     break
                                 end
@@ -1082,7 +1060,7 @@ local function main()
                         
                         if item_name then
                             -- Validate against database (same as manual refresh but silent)
-                            if not Database.database then
+                            if not YALM2_Database.database then
                                 -- Skip validation if database not available
                                 break
                             end
@@ -1101,15 +1079,8 @@ local function main()
                                 if db_item then break end
                                 local escaped = search_term:gsub("'", "''")
                                 
-                                local q1 = string.format("SELECT * FROM raw_item_data_315 WHERE name = '%s' LIMIT 1", escaped)
-                                for row in Database.database:nrows(q1) do
-                                    db_item = row
-                                    break
-                                end
-                                if db_item then break end
-                                
-                                local q2 = string.format("SELECT * FROM raw_item_data WHERE name = '%s' LIMIT 1", escaped)
-                                for row in Database.database:nrows(q2) do
+                                local query = string.format("SELECT * FROM raw_item_data WHERE name = '%s' LIMIT 1", escaped)
+                                for row in YALM2_Database.database:nrows(query) do
                                     db_item = row
                                     break
                                 end

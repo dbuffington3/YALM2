@@ -1,7 +1,7 @@
 --- @type Mq
 local mq = require("mq")
 
-local inspect = require("yalm.lib.inspect")
+local inspect = require("yalm2.lib.inspect")
 
 Write = { _version = "1.6" }
 

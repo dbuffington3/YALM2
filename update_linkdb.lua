@@ -154,29 +154,26 @@ function UpdateLinkDB.update_single_item(item_id)
         return false
     end
     
-    -- Try both table names
-    local tables = {"raw_item_data", "raw_item_data_315"}
+    -- Process only the main table
+    local table_name = "raw_item_data"
+    print("\n--- Processing table: " .. table_name .. " ---")
+    
+    -- Get existing columns
+    local existing_columns = UpdateLinkDB.get_table_columns(db, table_name)
+    if #existing_columns == 0 then
+        print("Table " .. table_name .. " not found or empty, skipping")
+        db:close()
+        return false
+    end
+    
     local updated = false
     
-    for _, table_name in ipairs(tables) do
-        print("\n--- Processing table: " .. table_name .. " ---")
-        
-        -- Get existing columns
-        local existing_columns = UpdateLinkDB.get_table_columns(db, table_name)
-        if #existing_columns == 0 then
-            print("Table " .. table_name .. " not found or empty, skipping")
-            goto continue
-        end
-        
-        -- Add missing columns
-        UpdateLinkDB.add_missing_columns(db, table_name, lucy_data, existing_columns)
-        
-        -- Update item record
-        if UpdateLinkDB.update_item_record(db, table_name, item_id, lucy_data) then
-            updated = true
-        end
-        
-        ::continue::
+    -- Add missing columns
+    UpdateLinkDB.add_missing_columns(db, table_name, lucy_data, existing_columns)
+    
+    -- Update item record
+    if UpdateLinkDB.update_item_record(db, table_name, item_id, lucy_data) then
+        updated = true
     end
     
     db:close()

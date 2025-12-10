@@ -2,11 +2,11 @@
 local mq = require("mq")
 local lfs = require("lfs")
 
-local utils = require("yalm.lib.utils")
+local utils = require("yalm2.lib.utils")
 
 local settings = {}
 
-local inspect = require("yalm.lib.inspect")
+local inspect = require("yalm2.lib.inspect")
 
 settings.get_char_settings_filename = function(character)
 	local name = mq.TLO.Me.CleanName():lower()

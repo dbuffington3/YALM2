@@ -2,7 +2,7 @@
 local mq = require("mq")
 local lfs = require("lfs")
 
-local inspect = require("yalm.lib.inspect")
+local inspect = require("yalm2.lib.inspect")
 
 local utils = {}
 

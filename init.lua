@@ -148,7 +148,7 @@ local function initialize()
 
 	utils.plugin_check()
 
-	Database.database = assert(Database.OpenDatabase())
+	YALM2_Database.database = assert(YALM2_Database.OpenDatabase())
 	
 	-- Fix the Write prefix to show YALM2 instead of YALM (due to module caching)
 	Write.prefix = "\at[\ax\apYALM2\ax\at]\ax"

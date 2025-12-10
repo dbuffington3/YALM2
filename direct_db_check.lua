@@ -54,21 +54,6 @@ end
 
 if not found then
     print("Item 50814 not found in raw_item_data")
-    
-    -- Try raw_item_data_315 table
-    print("\n=== Trying raw_item_data_315 ===")
-    local query315 = "SELECT id, name, norent, questitem FROM raw_item_data_315 WHERE id = 50814;"
-    for row in db:nrows(query315) do
-        print("ID:", row.id)
-        print("Name:", row.name) 
-        print("norent:", row.norent)
-        print("questitem:", row.questitem)
-        found = true
-    end
-end
-
-if not found then
-    print("Item 50814 not found in either table")
 end
 
 db:close()

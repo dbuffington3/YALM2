@@ -1,6 +1,6 @@
-local Classes = require("yalm.definitions.Classes")
-local InventorySlots = require("yalm.definitions.InventorySlots")
-local ItemTypes = require("yalm.definitions.ItemTypes")
+local Classes = require("yalm2.definitions.Classes")
+local InventorySlots = require("yalm2.definitions.InventorySlots")
+local ItemTypes = require("yalm2.definitions.ItemTypes")
 
 local Item = {
 	item_db = nil,

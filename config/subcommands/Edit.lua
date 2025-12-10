@@ -1,9 +1,9 @@
-local configuration = require("yalm.config.configuration")
-local settings = require("yalm.config.settings")
+local configuration = require("yalm2.config.configuration")
+local settings = require("yalm2.config.settings")
 
-local loader = require("yalm.core.loader")
+local loader = require("yalm2.core.loader")
 
-local utils = require("yalm.lib.utils")
+local utils = require("yalm2.lib.utils")
 
 local function edit_config(type, global_settings, char_settings, args)
 	local filename = nil

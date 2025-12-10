@@ -1,5 +1,8 @@
 local mq = require("mq")
-local Write = require("yalm.lib.Write")
+local Write = require("yalm2.lib.Write")
+
+local sql = require("lsqlite3")
+local utils = require("yalm2.lib.utils")
 
 local function action(global_settings, char_settings, args)
 	if not args[2] then
@@ -11,23 +14,63 @@ local function action(global_settings, char_settings, args)
 	local query = args[2]
 	local item_data = nil
 	
-	-- Refresh database connection to ensure we get the latest data
-	Write.Info("Refreshing database connection...")
-	if Database.database then
-		Database.database:close()
+	-- Open database connection directly for this command
+	local db_path = ("%s/MQ2LinkDB.db"):format(mq.TLO.MacroQuest.Path("resources"))
+	local db, ec, em = sql.open(db_path)
+	
+	if not db then
+		Write.Error("Failed to open database: %s", em)
+		return
 	end
-	Database.database = Database.OpenDatabase()
 	
 	-- Determine if it's an ID (numeric) or name
 	local item_id = tonumber(query)
 	if item_id then
 		Write.Info("Querying database for item ID: %d", item_id)
-		item_data = Database.QueryDatabaseForItemId(item_id)
+		
+		local sql_query = string.format("SELECT * FROM raw_item_data WHERE id = %d LIMIT 1", item_id)
+		for row in db:nrows(sql_query) do
+			item_data = row
+			break
+		end
 	else
 		Write.Info("Querying database for item name: %s", query)
-		item_data = Database.QueryDatabaseForItemName(query)
+		
+		-- Try exact match first
+		local escaped = query:gsub("'", "''")
+		local sql_query = string.format("SELECT * FROM raw_item_data WHERE name = '%s' LIMIT 1", escaped)
+		
+		for row in db:nrows(sql_query) do
+			item_data = row
+			break
+		end
+		
+		-- If not found, try removing trailing 's'
+		if not item_data and query:match('s$') then
+			local variant = query:sub(1, -2)
+			escaped = variant:gsub("'", "''")
+			sql_query = string.format("SELECT * FROM raw_item_data WHERE name = '%s' LIMIT 1", escaped)
+			for row in db:nrows(sql_query) do
+				item_data = row
+				break
+			end
+		end
+		
+		-- If not found, try removing trailing 'es'
+		if not item_data and query:match('es$') then
+			local variant = query:sub(1, -3)
+			escaped = variant:gsub("'", "''")
+			sql_query = string.format("SELECT * FROM raw_item_data WHERE name = '%s' LIMIT 1", escaped)
+			for row in db:nrows(sql_query) do
+				item_data = row
+				break
+			end
+		end
 	end
-	
+
+	-- Close database connection
+	db:close()
+
 	if item_data then
 		Write.Info("Item found in database:")
 		Write.Info("  ID: %s", tostring(item_data.id or "unknown"))
