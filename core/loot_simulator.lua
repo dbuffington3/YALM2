@@ -80,17 +80,9 @@ local function find_item_by_name(search_name)
     for _, search_term in ipairs(search_variations) do
         local escaped = search_term:gsub("'", "''")
         
-        -- Try exact match in 315 table first
-        local q1 = string.format("SELECT * FROM raw_item_data_315 WHERE name = '%s' LIMIT 1", escaped)
-        for row in database.database:nrows(q1) do
-            Write.Debug("Found in 315: %s (ID: %d)", row.name, row.id)
-            return row.id, row.name
-        end
-        
-        -- Try exact match in old table
-        local q2 = string.format("SELECT * FROM raw_item_data WHERE name = '%s' LIMIT 1", escaped)
-        for row in database.database:nrows(q2) do
-            Write.Debug("Found in old: %s (ID: %d)", row.name, row.id)
+        local query = string.format("SELECT * FROM raw_item_data WHERE name = '%s' LIMIT 1", escaped)
+        for row in database.database:nrows(query) do
+            Write.Debug("Found: %s (ID: %d)", row.name, row.id)
             return row.id, row.name
         end
     end
@@ -98,15 +90,9 @@ local function find_item_by_name(search_name)
     -- If exact match failed, try LIKE search as last resort
     Write.Debug("Exact matches failed, trying LIKE search for: %s", search_name)
     local like_pattern = search_name:lower():gsub("s$", "")  -- Remove trailing 's'
-    local q_like = string.format("SELECT * FROM raw_item_data_315 WHERE LOWER(name) LIKE '%%%s%%' LIMIT 1", like_pattern:gsub("'", "''"))
+    local q_like = string.format("SELECT * FROM raw_item_data WHERE LOWER(name) LIKE '%%%s%%' LIMIT 1", like_pattern:gsub("'", "''"))
     for row in database.database:nrows(q_like) do
-        Write.Debug("Found via LIKE in 315: %s (ID: %d)", row.name, row.id)
-        return row.id, row.name
-    end
-    
-    local q_like2 = string.format("SELECT * FROM raw_item_data WHERE LOWER(name) LIKE '%%%s%%' LIMIT 1", like_pattern:gsub("'", "''"))
-    for row in database.database:nrows(q_like2) do
-        Write.Debug("Found via LIKE in old: %s (ID: %d)", row.name, row.id)
+        Write.Debug("Found via LIKE: %s (ID: %d)", row.name, row.id)
         return row.id, row.name
     end
     
@@ -115,13 +101,8 @@ end
 
 -- Find item by ID
 local function find_item_by_id(item_id)
-    local q1 = string.format("SELECT * FROM raw_item_data_315 WHERE id = %d LIMIT 1", item_id)
-    for row in database.database:nrows(q1) do
-        return row.id, row.name
-    end
-    
-    local q2 = string.format("SELECT * FROM raw_item_data WHERE id = %d LIMIT 1", item_id)
-    for row in database.database:nrows(q2) do
+    local query = string.format("SELECT * FROM raw_item_data WHERE id = %d LIMIT 1", item_id)
+    for row in database.database:nrows(query) do
         return row.id, row.name
     end
     
@@ -159,16 +140,6 @@ function simulator.simulate_loot(item_name_or_id, is_id, force_quest)
         verified_id = row.id
         verified_name = row.name
         break
-    end
-    
-    if not verified_id then
-        -- Try 315 table
-        verification_query = string.format("SELECT id, name FROM raw_item_data_315 WHERE id = %d LIMIT 1", item_id)
-        for row in database.database:nrows(verification_query) do
-            verified_id = row.id
-            verified_name = row.name
-            break
-        end
     end
     
     if verified_id then
