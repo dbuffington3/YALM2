@@ -286,43 +286,84 @@ function native_tasks.get_characters_needing_item(item_name)
     Write.Info("[NativeQuest] DEBUG: get_characters_needing_item called for: " .. item_name)
     Write.Debug("[NativeQuest] Getting characters needing: %s", item_name)
     
-    -- Try to get fresh quest data from MQ2 variables now (when actually needed)
+    -- Try to get fresh quest data from MQ2 variables first
     local success, quest_data = pcall(function()
         if mq.TLO.YALM2_Quest_Items then
             local items_str = tostring(mq.TLO.YALM2_Quest_Items)
             if items_str and items_str ~= "NULL" and items_str:len() > 0 then
                 Write.Info("[NativeQuest] Reading live quest data: %s", items_str:sub(1, 100))
-                return items_str
+                return items_str, "mq2"
             end
         end
-        return nil
+        return nil, nil
     end)
     
-    -- Parse quest data if we got it
+    local source = "none"
     local all_items = {}
+    
     if success and quest_data then
-        -- Parse the quest data string format: "item1:char1,char2|item2:char3,char4|"
-        for item_data in quest_data:gmatch("([^|]+)") do
-            local parsed_item_name, char_list_str = item_data:match("([^:]+):(.+)")
-            if parsed_item_name and char_list_str then
-                all_items[parsed_item_name] = {}
-                for char_name in char_list_str:gmatch("([^,]+)") do
-                    table.insert(all_items[parsed_item_name], {
-                        character = char_name,
-                        task_name = "Quest Task",
-                        status = "needed"
-                    })
+        source = quest_data
+        quest_data = quest_data ~= "mq2" and quest_data or nil  -- Extract actual data if source was included
+        
+        -- If we got MQ2 data, parse it
+        if source == "mq2" then
+            -- MQ2 format: "item1:char1,char2|item2:char3,char4|"
+            for item_data in quest_data:gmatch("([^|]+)") do
+                local parsed_item_name, char_list_str = item_data:match("([^:]+):(.+)")
+                if parsed_item_name and char_list_str then
+                    all_items[parsed_item_name] = {}
+                    for char_name in char_list_str:gmatch("([^,]+)") do
+                        table.insert(all_items[parsed_item_name], {
+                            character = char_name,
+                            task_name = "Quest Task",
+                            status = "needed"
+                        })
+                    end
                 end
             end
+            local item_count = 0
+            for _ in pairs(all_items) do
+                item_count = item_count + 1
+            end
+            Write.Debug("[NativeQuest] Parsed %d quest item types from MQ2 data", item_count)
         end
-        local item_count = 0
-        for _ in pairs(all_items) do
-            item_count = item_count + 1
+    end
+    
+    -- Fallback to global variable if MQ2 data not available (for simulator)
+    if not success or not quest_data or (source ~= "mq2" and not next(all_items)) then
+        Write.Debug("[NativeQuest] No MQ2 quest data, checking global YALM2_QUEST_ITEMS_WITH_QTY")
+        local global_quest_data = _G.YALM2_QUEST_ITEMS_WITH_QTY or ""
+        if global_quest_data:len() > 0 then
+            -- Global format: "Item:char1:qty1,char2:qty2|Item2:char3:qty3|"
+            for item_data in global_quest_data:gmatch("([^|]+)") do
+                local parts = {}
+                for part in item_data:gmatch("([^:]+)") do
+                    table.insert(parts, part)
+                end
+                
+                if parts[1] then
+                    local parsed_item_name = parts[1]
+                    all_items[parsed_item_name] = all_items[parsed_item_name] or {}
+                    
+                    -- Parse character:quantity pairs
+                    if #parts > 1 then
+                        for i = 2, #parts do
+                            local char_qty_pair = parts[i]
+                            local char_name, qty_str = char_qty_pair:match("([^:]+):(.+)")
+                            if char_name then
+                                table.insert(all_items[parsed_item_name], {
+                                    character = char_name,
+                                    task_name = "Quest Task (Global)",
+                                    status = "needed",
+                                    qty = tonumber(qty_str) or 0
+                                })
+                            end
+                        end
+                    end
+                end
+            end
+            Write.Debug("[NativeQuest] Using global quest data as fallback")
         end
-        Write.Debug("[NativeQuest] Parsed %d quest item types from live data", item_count)
-    else
-        Write.Debug("[NativeQuest] No live quest data available from MQ2 variables yet")
-        all_items = {}
     end
     
     local characters_needing = {}
