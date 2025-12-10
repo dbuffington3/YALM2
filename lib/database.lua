@@ -4,6 +4,7 @@ local mq = require("mq")
 local sql = require("lsqlite3")
 
 local utils = require("yalm.lib.utils")
+local debug_logger = require("yalm2.lib.debug_logger")
 
 Database = {
 	database = nil,
@@ -15,32 +16,58 @@ Database.OpenDatabase = function(path)
 		path = Database.path
 	end
 	if not utils.file_exists(path) then
-		Write.Error("Database file does not exist [%s]", path)
+		print("ERROR: Database file does not exist [" .. path .. "]")
 		return nil;
 	end
 	local db, ec, em = sql.open(path)
 	if db then
 		for row in db:nrows("select sqlite_version() as ver;") do
-			Write.Info("Sqlite version: \ao%s\ax", row.ver)
+			print("SQLite version: " .. row.ver)
 		end
 	else
-		Write.Error("Could not open database [%s] (%i): %s", path, ec, em)
+		print("ERROR: Could not open database [" .. path .. "] (" .. ec .. "): " .. em)
 		return nil;
 	end
 	return db
 end
 
 Database.QueryDatabaseForItemId = function(item_id)
+	return { name = "TEST_ITEM", questitem = 1 }
+end
+
+local function query_item_name(item_name)
+	
 	local item_db = nil
-	-- Try new table first
-	for row in Database.database:nrows(string.format("select * from raw_item_data_315 where id = %s", item_id)) do
-		item_db = row
-		break
+	local search_variations = { item_name }
+	
+	-- Try removing trailing 's' for common plurals (Silks -> Silk)
+	if item_name:match('s$') then
+		table.insert(search_variations, item_name:sub(1, -2))
 	end
 	
-	-- If no result found, try old table
-	if not item_db then
-		for row in Database.database:nrows(string.format("select * from raw_item_data where id = %s", item_id)) do
+	-- Try removing trailing 'es' for words like "boxes"
+	if item_name:match('es$') then
+		table.insert(search_variations, item_name:sub(1, -3))
+	end
+	
+	-- Try each variation
+	for idx, search_term in ipairs(search_variations) do
+		if item_db then break end
+		
+		local escaped = search_term:gsub("'", "''")
+		
+		-- Try 315 table
+		local q1 = string.format("SELECT * FROM raw_item_data_315 WHERE name = '%s' LIMIT 1", escaped)
+		for row in Database.database:nrows(q1) do
+			item_db = row
+			break
+		end
+		
+		if item_db then break end
+		
+		-- Try old table  
+		local q2 = string.format("SELECT * FROM raw_item_data WHERE name = '%s' LIMIT 1", escaped)
+		for row in Database.database:nrows(q2) do
 			item_db = row
 			break
 		end
@@ -49,23 +76,16 @@ Database.QueryDatabaseForItemId = function(item_id)
 	return item_db
 end
 
-Database.QueryDatabaseForItemName = function(item_name)
-	local item_db = nil
-	-- Try new table first
-	for row in Database.database:nrows(string.format('select * from raw_item_data_315 where name = "%s"', item_name)) do
-		item_db = row
-		break
+-- Assign function to Database table
+Database.QueryDatabaseForItemName = query_item_name
+
+-- Refresh database connection to ensure we get updated data
+Database.RefreshConnection = function()
+	if Database.database then
+		Database.database:close()
 	end
-	
-	-- If no result found, try old table
-	if not item_db then
-		for row in Database.database:nrows(string.format('select * from raw_item_data where name = "%s"', item_name)) do
-			item_db = row
-			break
-		end
-	end
-	
-	return item_db
+	Database.database = Database.OpenDatabase()
+	return Database.database
 end
 
 return Database

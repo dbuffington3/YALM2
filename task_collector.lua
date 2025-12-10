@@ -160,7 +160,7 @@ end
 
 -- Initialize the collector
 local function initialize()
-    print(string.format("[YALM2 Collector] Starting task collector for %s", collector.my_name))
+    -- Removed startup message to reduce log spam
     
     -- Register anonymous actor (TaskHUD style - no name)
     collector.actor = actors.register(handle_actor_message)

@@ -115,41 +115,6 @@ local function initialize()
 
 	Database.database = assert(Database.OpenDatabase())
 	
-	-- Patch the database functions to fix the fallback logic (due to module caching)
-	Database.QueryDatabaseForItemId = function(item_id)
-		local item_db = nil
-		-- Try new table first
-		for row in Database.database:nrows(string.format("select * from raw_item_data_315 where id = %s", item_id)) do
-			item_db = row
-			break
-		end
-		-- If no result found, try old table
-		if not item_db then
-			for row in Database.database:nrows(string.format("select * from raw_item_data where id = %s", item_id)) do
-				item_db = row
-				break
-			end
-		end
-		return item_db
-	end
-	
-	Database.QueryDatabaseForItemName = function(item_name)
-		local item_db = nil
-		-- Try new table first
-		for row in Database.database:nrows(string.format('select * from raw_item_data_315 where name = "%s"', item_name)) do
-			item_db = row
-			break
-		end
-		-- If no result found, try old table
-		if not item_db then
-			for row in Database.database:nrows(string.format('select * from raw_item_data where name = "%s"', item_name)) do
-				item_db = row
-				break
-			end
-		end
-		return item_db
-	end
-	
 	-- Fix the Write prefix to show YALM2 instead of YALM (due to module caching)
 	Write.prefix = "\at[\ax\apYALM2\ax\at]\ax"
 

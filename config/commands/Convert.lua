@@ -110,7 +110,8 @@ command.advloot = function(global_settings, char_settings, type, args)
 
 	Write.Info("Saving character configuration...")
 
-	settings.save_char_settings(char_settings)
+	local filename = settings.get_char_settings_filename()
+	settings.save_char_settings(filename, char_settings)
 
 	Write.Info("Finished saving")
 

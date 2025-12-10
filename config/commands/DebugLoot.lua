@@ -1,4 +1,4 @@
-local tasks = require("yalm2.core.tasks")
+local quest_interface = require("yalm2.core.quest_interface")
 local evaluate = require("yalm.core.evaluate")
 local looting = require("yalm.core.looting")
 local mq = require("mq")
@@ -48,7 +48,7 @@ local function action(global_settings, char_settings, args)
 	Write.Info("Step 3: Testing task data lookup...")
 	
 	-- First check if we have quest items at all
-	local all_quest_items = tasks.get_all_quest_items()
+	local all_quest_items = quest_interface.get_all_quest_items()
 	local quest_item_count = 0
 	for _ in pairs(all_quest_items) do quest_item_count = quest_item_count + 1 end
 	Write.Info("  Total quest items tracked: %d", quest_item_count)
@@ -64,7 +64,7 @@ local function action(global_settings, char_settings, args)
 	end
 	
 	-- Test the specific function
-	local needed_by, task_name, objective = tasks.get_characters_needing_item("Blighted Blood Sample")
+	local needed_by, task_name, objective = quest_interface.get_characters_needing_item("Blighted Blood Sample")
 	Write.Info("  get_characters_needing_item result:")
 	Write.Info("    needed_by: %s", needed_by and table.concat(needed_by, ", ") or "nil")
 	Write.Info("    task_name: %s", task_name or "nil")

@@ -25,8 +25,12 @@ end
 --- Check if an item is needed for quests
 quest_interface.is_quest_item = function(item_name)
     if use_native_system then
+        debug_logger.info("QUEST_INTERFACE: is_quest_item called for %s (native_system=%s)", item_name, tostring(use_native_system))
         if native_tasks and native_tasks.is_quest_item then
+            debug_logger.info("QUEST_INTERFACE: Calling native_tasks.is_quest_item for %s", item_name)
             return native_tasks.is_quest_item(item_name)
+        else
+            debug_logger.warn("QUEST_INTERFACE: native_tasks or is_quest_item function not available")
         end
         return false
     else
@@ -40,9 +44,13 @@ end
 --- Get characters who need a specific quest item
 quest_interface.get_characters_needing_item = function(item_name)
     if use_native_system then
+        debug_logger.info("QUEST_INTERFACE: get_characters_needing_item called for %s (native_system=%s)", item_name, tostring(use_native_system))
         if native_tasks and native_tasks.get_characters_needing_item then
+            debug_logger.info("QUEST_INTERFACE: Calling native_tasks.get_characters_needing_item for %s", item_name)
             local chars, task_name, objective = native_tasks.get_characters_needing_item(item_name)
             return chars or {}
+        else
+            debug_logger.warn("QUEST_INTERFACE: native_tasks or get_characters_needing_item function not available")
         end
         return {}
     else

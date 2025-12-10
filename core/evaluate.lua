@@ -10,7 +10,9 @@ local Item = require("yalm.definitions.Item")
 local database = require("yalm.lib.database")
 local dannet = require("yalm.lib.dannet")
 local utils = require("yalm.lib.utils")
-local tasks = require("yalm2.core.tasks")
+local Write = require("yalm.lib.Write")
+local debug_logger = require("yalm2.lib.debug_logger")
+local quest_interface = require("yalm2.core.quest_interface")
 
 local evaluate = {}
 
@@ -41,6 +43,8 @@ local function get_valid_member(tlo, index)
 end
 
 evaluate.check_can_loot = function(member, item, loot, save_slots, dannet_delay, always_loot, unmatched_item_rule)
+	debug_logger.info("CHECK_CAN_LOOT: Function called for member: %s", tostring(member and member.CleanName and member.CleanName() or "Unknown"))
+	
 	local char_settings =
 		evaluate.get_member_char_settings(member, save_slots, dannet_delay, always_loot, unmatched_item_rule)
 
@@ -49,7 +53,9 @@ evaluate.check_can_loot = function(member, item, loot, save_slots, dannet_delay,
 	local char_always_loot = char_settings.settings.always_loot
 	local char_unmatched_item_rule = char_settings.settings.unmatched_item_rule
 
+	Write.Info("[DEBUG] About to call get_loot_preference")
 	local preference = evaluate.get_loot_preference(item, loot, char_settings, char_unmatched_item_rule)
+	Write.Info("[DEBUG] get_loot_preference returned: %s", tostring(preference ~= nil))
 
 	local can_loot = evaluate.check_loot_preference(preference, loot)
 
@@ -261,23 +267,25 @@ evaluate.get_loot_item = function(item)
 		local item_id = item.ID()
 		local item_name = item.Name()
 		
-		Write.Info("Looking up AdvLoot item - ID: %s, Name: '%s'", tostring(item_id), tostring(item_name))
+		debug_logger.info("DB_LOOKUP: AdvLoot item - ID: %s, Name: '%s'", tostring(item_id), tostring(item_name))
 		
 		loot_item = Item:new(nil, database.QueryDatabaseForItemId(item_id))
 
 		if not loot_item.item_db then
-			Write.Warn("Item ID %s not found in database, trying by name: '%s'", tostring(item_id), tostring(item_name))
+			debug_logger.info("DB_LOOKUP: Item ID %s not found, trying by name: '%s'", tostring(item_id), tostring(item_name))
 			loot_item = Item:new(nil, database.QueryDatabaseForItemName(item_name))
 		else
-			Write.Info("Item ID %s found in database successfully", tostring(item_id))
+			debug_logger.info("DB_LOOKUP: Item ID %s found in database successfully", tostring(item_id))
 		end
 
 		if not loot_item.item_db then
-			Write.Error("Item '%s' (ID: %s) not found in database by ID or name", tostring(item_name), tostring(item_id))
+			debug_logger.error("DB_LOOKUP: Item '%s' (ID: %s) not found in database by ID or name", tostring(item_name), tostring(item_id))
 			loot_item = nil
 		else
-			Write.Info("Item data loaded - DB ID: %s, DB Name: '%s'", 
+			debug_logger.info("DB_LOOKUP: Item data loaded - DB ID: %s, DB Name: '%s'", 
 				tostring(loot_item.item_db.id), tostring(loot_item.item_db.name))
+			debug_logger.info("DB_LOOKUP: NoRent: %s, NoDrop: %s, QuestItemFlag: %s", 
+				tostring(loot_item.item_db.norent), tostring(loot_item.item_db.nodrop), tostring(loot_item.item_db.questitemflag))
 		end
 	end
 
@@ -285,122 +293,168 @@ evaluate.get_loot_item = function(item)
 end
 
 evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_item_rule)
-	local preference
+	local preference = nil
 
-
-
+	-- LOOT DEBUG: Comprehensive logging to debug file
+	debug_logger.info("=== LOOT ANALYSIS START ===")
+	
+	-- Get basic item information
+	local item_name = "Unknown"
+	local item_id = "Unknown" 
+	if item and item.Name then
+		item_name = item.Name()
+		if item.ID then
+			item_id = tostring(item.ID())
+		end
+	end
+	
+	debug_logger.info("LOOT: Analyzing item '%s' (ID: %s)", item_name, item_id)
+	debug_logger.info("LOOT: Item type: %s", type(item))
+	if item then
+		debug_logger.info("LOOT: Item has Index: %s", tostring(item.Index ~= nil))
+		debug_logger.info("LOOT: Item has ID method: %s", tostring(item.ID ~= nil))
+	end
+	
+	-- Database lookup
+	debug_logger.info("LOOT: Calling get_loot_item for database lookup...")
 	local loot_item = evaluate.get_loot_item(item)
 	
-
-
-	-- PRIORITY 1: Check if item is needed for quests (quest flag OR in our task data)
 	if loot_item ~= nil then
-		local item_name = loot_item.Name()
-		local has_quest_flag = loot_item.Quest and loot_item.Quest()
+		debug_logger.info("LOOT: Database lookup successful")
+		debug_logger.info("LOOT: Database item name: %s", tostring(loot_item.Name and loot_item.Name() or "N/A"))
+		debug_logger.info("LOOT: Database item ID: %s", tostring(loot_item.ID and loot_item.ID() or "N/A"))
 		
-		-- Debug: Check the item database directly
-		local questitemflag_value = nil
-		if loot_item.item_db and loot_item.item_db.questitemflag then
-			questitemflag_value = loot_item.item_db.questitemflag
-		end
-		
-		-- Simplified quest detection to prevent crashes
-		local needed_by, task_name, objective
-		local in_task_data = false
-		
-		-- Safely check task data
-		if tasks and tasks.get_characters_needing_item then
-			local success, result1, result2, result3 = pcall(tasks.get_characters_needing_item, item_name)
-			if success and result1 and #result1 > 0 then
-				needed_by, task_name, objective = result1, result2, result3
-				in_task_data = true
-			end
-		end
-		
-		if has_quest_flag or in_task_data then
-		
-		if needed_by and #needed_by > 0 then
-			-- Filter needed_by to only include group/raid members
-			local group_or_raid_tlo = get_group_or_raid_tlo()
-			local count = get_member_count(group_or_raid_tlo)
-			local valid_recipients = {}
+		if loot_item.item_db then
+			debug_logger.info("LOOT: Database flags available")
+			debug_logger.info("LOOT: NoRent flag: %s", tostring(loot_item.item_db.norent))
+			debug_logger.info("LOOT: NoDrop flag: %s", tostring(loot_item.item_db.nodrop)) 
+			debug_logger.info("LOOT: QuestItem flag: %s", tostring(loot_item.item_db.questitemflag))
 			
-			-- Check each character who needs the item
-			for _, char_name in ipairs(needed_by) do
-				-- Check if this character is in our group/raid
-				for i = 0, count do
-					local member = get_valid_member(group_or_raid_tlo, i)
-					if member and member.CleanName():lower() == char_name:lower() then
-						table.insert(valid_recipients, char_name)
-						break
-					end
-				end
-			end
+			local is_quest_item = (loot_item.item_db.norent == 1)
+			debug_logger.info("LOOT: Quest Item Detection: %s (NoRent=%s)", tostring(is_quest_item), tostring(loot_item.item_db.norent))
 			
-			if #valid_recipients > 0 then
-				Write.Info("Quest item %s needed by group members: %s (task: %s)", 
-					item_name, table.concat(valid_recipients, ", "), task_name or "Unknown")
-				
-				-- Select the best recipient for this quest item
-				-- Priority: First non-master-looter who needs it, otherwise first recipient
-				local selected_recipient = valid_recipients[1]  -- Default to first
-				local master_looter = mq.TLO.Group.MasterLooter.CleanName()
-				
-				-- Try to find a non-master-looter recipient first
-				for _, recipient in ipairs(valid_recipients) do
-					if recipient:lower() ~= master_looter:lower() then
-						selected_recipient = recipient
-						break
+			-- QUEST SYSTEM CHECK
+			if quest_interface and quest_interface.get_characters_needing_item then
+				debug_logger.info("QUEST: Quest interface available, checking characters needing item...")
+				local success, chars, task_name, objective = pcall(quest_interface.get_characters_needing_item, item_name)
+				if success then
+					debug_logger.info("QUEST: Quest check successful. Characters needing: %d", chars and #chars or 0)
+					if chars and #chars > 0 then
+						debug_logger.info("QUEST: Characters: %s", table.concat(chars, ", "))
+						debug_logger.info("QUEST: Task: %s", tostring(task_name))
+						debug_logger.info("QUEST: Objective: %s", tostring(objective))
+						
+						if is_quest_item then
+							debug_logger.info("QUEST: DIRECT ASSIGNMENT - Quest item needed by quest characters")
+							debug_logger.info("=== LOOT ANALYSIS END: QUEST DIRECT ===")
+							return { 
+								setting = "Keep", 
+								list = chars,
+								data = { quest_item = true, direct_assignment = true, task_name = task_name }
+							}
+						else
+							debug_logger.info("QUEST: Item needed for quest but not flagged as NoRent - using normal loot rules")
+						end
+					else
+						debug_logger.info("QUEST: No characters need this item for quests")
+						if is_quest_item then
+							debug_logger.info("QUEST: NoRent quest item not needed - ignoring")
+							debug_logger.info("=== LOOT ANALYSIS END: QUEST IGNORE ===")
+							return { setting = "Ignore" }
+						end
 					end
+				else
+					debug_logger.error("QUEST: Quest interface call failed: %s", tostring(chars))
 				end
-				
-				Write.Info("Quest priority: Assigning %s to %s", item_name, selected_recipient)
-				
-				-- Return quest preference with single selected recipient
-				preference = { 
-					setting = "Keep", 
-					list = { selected_recipient },  -- Single recipient list
-					data = { quest_item = true, task_name = task_name, objective = objective, all_recipients = valid_recipients }
-				}
 			else
-				Write.Debug("Quest item %s not needed by any group/raid members, falling back to global settings", item_name)
-				-- Quest item but no group members need it - fall through to global settings
+				debug_logger.warn("QUEST: Quest interface not available")
 			end
 		else
-			Write.Debug("Quest item %s not needed by any characters, falling back to global settings", item_name)
-			-- Quest item but no one needs it - fall through to global settings
+			debug_logger.warn("LOOT: No database information available for item")
 		end
-		else
-			Write.Info("Item %s has no quest flag, using normal loot evaluation", item_name)
-		end
+	else
+		debug_logger.warn("LOOT: Database lookup failed - loot_item is nil")
 	end
-
+	
+	-- NORMAL LOOT PROCESSING
+	debug_logger.info("LOOT: Starting normal loot rule evaluation...")
 	if loot_item ~= nil and preference == nil then
-		-- Debug for specific item
+		debug_logger.info("LOOT: Checking character-specific item settings...")
 		if char_settings[configuration.types.item.settings_key] then
+			debug_logger.info("LOOT: Character has item settings configured")
 			preference = evaluate.check_loot_items(loot_item, loot.helpers, char_settings[configuration.types.item.settings_key])
+			if preference then
+				debug_logger.info("LOOT: Found character-specific preference: %s", tostring(preference.setting or preference))
+			else
+				debug_logger.info("LOOT: No character-specific preference found")
+			end
+		else
+			debug_logger.info("LOOT: No character-specific item settings configured")
 		end
 
-		if preference == nil and loot.items then
-			preference = evaluate.check_loot_items(loot_item, loot.helpers, loot.items)
+		-- Check global item settings
+		if preference == nil then
+			debug_logger.info("LOOT: Checking global item settings...")
+			if loot.items then
+				debug_logger.info("LOOT: Global item settings available")
+				preference = evaluate.check_loot_items(loot_item, loot.helpers, loot.items)
+				if preference then
+					debug_logger.info("LOOT: Found global item preference: %s", tostring(preference.setting or preference))
+				else
+					debug_logger.info("LOOT: No global item preference found")
+				end
+			else
+				debug_logger.info("LOOT: No global item settings available")
+			end
 		end
 
-		if preference == nil and char_settings[configuration.types.rule.settings_key] then
-			preference = evaluate.check_loot_rules(
-				loot_item,
-				loot.helpers,
-				loot.conditions,
-				loot.rules,
-				char_settings[configuration.types.rule.settings_key]
-			)
-
+		-- Check loot rules
+		if preference == nil then
+			debug_logger.info("LOOT: Checking loot rules...")
+			if char_settings[configuration.types.rule.settings_key] then
+				debug_logger.info("LOOT: Character has loot rules configured")
+				preference = evaluate.check_loot_rules(
+					loot_item,
+					loot.helpers,
+					loot.conditions,
+					loot.rules,
+					char_settings[configuration.types.rule.settings_key]
+				)
+				if preference then
+					debug_logger.info("LOOT: Found rule-based preference: %s", tostring(preference.setting or preference))
+				else
+					debug_logger.info("LOOT: No rule-based preference found")
+				end
+			else
+				debug_logger.info("LOOT: No loot rules configured for character")
+			end
+		end
+	else
+		if loot_item == nil then
+			debug_logger.warn("LOOT: Cannot process - loot_item is nil")
+		end
+		if preference ~= nil then
+			debug_logger.info("LOOT: Already has preference from quest processing: %s", tostring(preference.setting or preference))
 		end
 	end
 
+	-- Apply unmatched item rule if no preference found
 	if preference == nil and unmatched_item_rule then
+		debug_logger.info("LOOT: No preference found, applying unmatched item rule: %s", tostring(unmatched_item_rule))
 		preference = unmatched_item_rule
 	end
 
+	-- Final result
+	if preference then
+		debug_logger.info("LOOT: Final preference: %s", tostring(preference.setting or preference))
+		if preference.list then
+			debug_logger.info("LOOT: Target list: %s", table.concat(preference.list, ", "))
+		end
+	else
+		debug_logger.info("LOOT: No preference determined")
+	end
+	
+	debug_logger.info("=== LOOT ANALYSIS END ===")
 	return preference
 end
 

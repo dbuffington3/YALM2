@@ -1,4 +1,4 @@
-local tasks = require("yalm2.core.tasks")
+local quest_interface = require("yalm2.core.quest_interface")
 local mq = require("mq")
 local Write = require("yalm.lib.Write")
 
@@ -16,39 +16,29 @@ local function action(global_settings, char_settings, args)
 	
 	if subcommand == "status" then
 		-- Show current task data status
-		local task_data = tasks.get_task_data()
 		Write.Info("Task Awareness Status:")
-		local char_count = 0
-		for character, char_data in pairs(task_data.characters) do
-			char_count = char_count + 1
-			local task_count = char_data.task_count or #char_data.tasks
-			Write.Info("    %s: %d tasks", character, task_count)
+		
+		-- Check native quest system first
+		if _G.YALM2_QUEST_DATA then
+			Write.Info("  Native Quest System: Active")
+			Write.Info("  Last Update: %s", _G.YALM2_QUEST_DATA.timestamp and 
+				os.date("%H:%M:%S", _G.YALM2_QUEST_DATA.timestamp / 1000) or "Never")
 			
-			-- Show individual task names if we have them
-			if char_data.tasks and #char_data.tasks > 0 then
-				for i, task in ipairs(char_data.tasks) do
-					if i <= 3 then -- Limit to first 3 tasks to avoid spam
-						Write.Info("      - %s", task.task_name or "Unknown Task")
-					elseif i == 4 then
-						Write.Info("      ... and %d more tasks", #char_data.tasks - 3)
-						break
-					end
+			-- Show quest items being tracked
+			if _G.YALM2_QUEST_DATA.quest_items then
+				local item_count = 0
+				for _ in pairs(_G.YALM2_QUEST_DATA.quest_items) do
+					item_count = item_count + 1
 				end
+				Write.Info("  Quest items tracked: %d", item_count)
 			end
+		else
+			Write.Info("  Native Quest System: Not active")
 		end
-		Write.Info("  Characters with task data: %d", char_count)
-		
-		local item_count = 0
-		for _ in pairs(task_data.quest_items) do item_count = item_count + 1 end
-		Write.Info("  Quest items tracked: %d", item_count)
-		
-		local task_count = 0
-		for _ in pairs(task_data.missing_tasks) do task_count = task_count + 1 end
-		Write.Info("  Missing tasks: %d", task_count)
 		
 	elseif subcommand == "items" then
 		-- Show quest items being tracked
-		local quest_items = tasks.get_all_quest_items()
+		local quest_items = quest_interface.get_all_quest_items()
 		Write.Info("Quest Items Currently Tracked:")
 		for item_name, quest_info in pairs(quest_items) do
 			Write.Info("  %s:", item_name)
@@ -64,26 +54,18 @@ local function action(global_settings, char_settings, args)
 		
 	elseif subcommand == "refresh" then
 		-- Request fresh task data
-		Write.Info("Requesting fresh task data from TaskHUD...")
-		tasks.request_task_update()
+		Write.Info("Refreshing quest data...")
+		-- Native system refreshes automatically, but we can trigger a manual update
 		
 		-- Wait a moment and check for response
 		Write.Info("Waiting for TaskHUD response...")
 		mq.delay(1000)
 		
-		Write.Info("Checking for response...")
-		if tasks.check_taskhud_response() then
-			Write.Info("Successfully received task data via shared variables!")
+		Write.Info("Checking quest system status...")
+		if _G.YALM2_QUEST_DATA then
+			Write.Info("Native quest system active - data will refresh automatically")
 		else
-			Write.Warn("No response received from TaskHUD")
-			Write.Info("Checking if TaskHUD is even running...")
-			
-			-- Try to trigger TaskHUD manually to see if it's there
-			Write.Info("Current global variables state:")
-			Write.Info("  YALM2_NEEDS_TASKS: %s", tostring(_G.YALM2_NEEDS_TASKS))
-			Write.Info("  YALM2_REQUEST_TIMESTAMP: %s", tostring(_G.YALM2_REQUEST_TIMESTAMP))
-			Write.Info("  TASKHUD_TASK_DATA: %s", tostring(_G.TASKHUD_TASK_DATA ~= nil))
-			Write.Info("  TASKHUD_DATA_TIMESTAMP: %s", tostring(_G.TASKHUD_DATA_TIMESTAMP))
+			Write.Info("Native quest system not available")
 		end
 		
 	elseif subcommand == "simulate" then
@@ -94,12 +76,12 @@ local function action(global_settings, char_settings, args)
 		
 		-- Step 1: Check if we have quest item data
 		Write.Info("Current quest items in task_data:")
-		local all_quest_items = tasks.get_all_quest_items()
+		local all_quest_items = quest_interface.get_all_quest_items()
 		for item, info in pairs(all_quest_items) do
 			Write.Info("  - %s: needed by %s", item, table.concat(info.needed_by or {}, ", "))
 		end
 		
-		local needed_by, task_name, objective = tasks.get_characters_needing_item(item_name)
+		local needed_by, task_name, objective = quest_interface.get_characters_needing_item(item_name)
 		Write.Info("Step 1 - Quest item lookup:")
 		if needed_by and #needed_by > 0 then
 			Write.Info("  ✅ Item needed by: %s", table.concat(needed_by, ", "))

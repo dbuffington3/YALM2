@@ -11,6 +11,13 @@ local function action(global_settings, char_settings, args)
 	local query = args[2]
 	local item_data = nil
 	
+	-- Refresh database connection to ensure we get the latest data
+	Write.Info("Refreshing database connection...")
+	if Database.database then
+		Database.database:close()
+	end
+	Database.database = Database.OpenDatabase()
+	
 	-- Determine if it's an ID (numeric) or name
 	local item_id = tonumber(query)
 	if item_id then
@@ -29,7 +36,7 @@ local function action(global_settings, char_settings, args)
 		
 		-- Check specifically for quest-related fields
 		Write.Info("Quest-related fields:")
-		local quest_fields = {"quest", "questflag", "nodrop", "magic", "lore", "tradeskills"}
+		local quest_fields = {"questitem", "quest", "questflag", "nodrop", "norent", "magic", "lore", "tradeskills"}
 		for _, field in ipairs(quest_fields) do
 			local value = item_data[field]
 			if value ~= nil and value ~= 0 and value ~= "" then

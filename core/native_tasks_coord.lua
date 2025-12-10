@@ -171,7 +171,7 @@ function native_tasks.process()
     -- Request data update if we haven't had one recently
     if system_active and (mq.gettime() - last_data_update) > 10000 then  -- 10 seconds
         -- Silently refresh to keep data current
-        mq.cmd('/yalm2quest refresh')
+        mq.cmd('/yalm2quest refresh silent')  -- 'silent' argument suppresses auto-refresh quest messages
         last_data_update = mq.gettime()  -- Prevent spam
     end
 end

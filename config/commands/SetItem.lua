@@ -64,12 +64,24 @@ local function action(global_settings, char_settings, args)
 	if global_or_character == "me" then
 		Write.Info("Saving character settings...")
 		char_settings[configuration.types.item.settings_key][item_name] = preference
-		settings.save_char_settings(char_settings)
+		local filename = settings.get_char_settings_filename()
+		Write.Info("Character settings filename: %s", filename)
+		local success, error_msg = pcall(settings.save_char_settings, filename, char_settings)
+		if success then
+			Write.Info("Character settings saved successfully for %s", item_name)
+		else
+			Write.Error("Failed to save character settings: %s", tostring(error_msg))
+		end
 	elseif global_or_character == "all" then
 		Write.Info("Saving global settings...")
-		settings.update_and_save_global_settings(global_settings, configuration.types.item.settings_key, {
+		local success, error_msg = pcall(settings.update_and_save_global_settings, global_settings, configuration.types.item.settings_key, {
 			[item_name] = preference,
 		})
+		if success then
+			Write.Info("Global settings saved successfully for %s", item_name)
+		else
+			Write.Error("Failed to save global settings: %s", tostring(error_msg))
+		end
 	end
 end
 

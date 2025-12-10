@@ -103,11 +103,41 @@ looting.get_member_can_loot = function(item, loot, save_slots, dannet_delay, alw
 
 	-- QUEST PRE-CHECK: Handle quest items BEFORE member evaluation
 	local item_name = item and item.Name() or "unknown"
+	debug_logger.info("QUEST_PRECHECK: Checking if '%s' is needed for quests", item_name)
+	
+	-- Check if global quest data exists
+	if _G.YALM2_QUEST_DATA then
+		local item_count = 0
+		if _G.YALM2_QUEST_DATA.quest_items then
+			for _ in pairs(_G.YALM2_QUEST_DATA.quest_items) do
+				item_count = item_count + 1
+			end
+		end
+		debug_logger.info("QUEST_PRECHECK: Global quest data available with %d item types", item_count)
+		
+		if _G.YALM2_QUEST_DATA.quest_items then
+			local sample_items = {}
+			local count = 0
+			for item_name_key, _ in pairs(_G.YALM2_QUEST_DATA.quest_items) do
+				table.insert(sample_items, item_name_key)
+				count = count + 1
+				if count >= 3 then break end
+			end
+			debug_logger.info("QUEST_PRECHECK: Sample quest items: %s", table.concat(sample_items, ", "))
+		end
+	else
+		debug_logger.warn("QUEST_PRECHECK: No global quest data available (_G.YALM2_QUEST_DATA is nil)")
+	end
+	
 	local needed_by = quest_interface.get_characters_needing_item(item_name)
+	debug_logger.info("QUEST_PRECHECK: Characters needing '%s': %s", item_name, 
+		needed_by and table.concat(needed_by, ", ") or "none")
+	
 	local task_name = nil  -- Quest interface currently doesn't return task details
 	local objective = nil
 	
 	local is_quest_item = (needed_by and #needed_by > 0)
+	debug_logger.info("QUEST_PRECHECK: '%s' classified as quest item: %s", item_name, tostring(is_quest_item))
 	if is_quest_item then
 		Write.Error("*** EARLY QUEST DETECTION: %s needed by [%s] ***", 
 			item_name, table.concat(needed_by, ", "))
@@ -130,19 +160,43 @@ looting.get_member_can_loot = function(item, loot, save_slots, dannet_delay, alw
 			Write.Error("*** EARLY QUEST OVERRIDE: Testing only quest characters [%s] ***", 
 				table.concat(valid_recipients, ", "))
 			
-			-- Test ONLY the quest characters, skip everyone else
+			-- IMPROVED DISTRIBUTION: Prioritize non-master looters first to avoid ML hoarding
+			local master_looter = mq.TLO.Group.MainAssist.CleanName() or mq.TLO.Me.CleanName()
+			local non_ml_candidates = {}
+			local ml_candidates = {}
+			
+			-- Separate candidates by master looter status
 			for _, recipient_name in ipairs(valid_recipients) do
+				if recipient_name:lower() == master_looter:lower() then
+					table.insert(ml_candidates, recipient_name)
+				else
+					table.insert(non_ml_candidates, recipient_name)
+				end
+			end
+			
+			-- Try non-master looters first, then master looter as fallback
+			local priority_list = {}
+			for _, name in ipairs(non_ml_candidates) do table.insert(priority_list, name) end
+			for _, name in ipairs(ml_candidates) do table.insert(priority_list, name) end
+			
+			Write.Error("*** DISTRIBUTION PRIORITY: Non-ML [%s], ML [%s] ***", 
+				table.concat(non_ml_candidates, ", "), table.concat(ml_candidates, ", "))
+			
+			-- Test candidates in priority order
+			for _, recipient_name in ipairs(priority_list) do
 				for i = 0, count do
 					local test_member = looting.get_valid_member(group_or_raid_tlo, i)
 					if test_member and test_member.CleanName():lower() == recipient_name:lower() then
-						Write.Error("*** TESTING QUEST MEMBER: %s ***", test_member.CleanName())
+						Write.Error("*** TESTING QUEST MEMBER: %s (ML: %s) ***", 
+							test_member.CleanName(), test_member.CleanName():lower() == master_looter:lower() and "YES" or "NO")
 						
 						can_loot, check_rematch, preference =
 							evaluate.check_can_loot(test_member, item, loot, save_slots, dannet_delay, always_loot, unmatched_item_rule)
 
 						if can_loot then
 							member = test_member
-							Write.Error("*** QUEST WINNER: %s ***", member.CleanName())
+							Write.Error("*** QUEST WINNER: %s (Priority: %s) ***", 
+								member.CleanName(), member.CleanName():lower() == master_looter:lower() and "ML-Fallback" or "Non-ML-Priority")
 							
 							-- LIGHTWEIGHT: Trust cached quest data instead of heavy real-time validation  
 							Write.Info("*** QUEST LOOT: Using cached data to reduce TaskHUD pressure ***")
@@ -359,6 +413,89 @@ looting.handle_master_looting = function(global_settings)
 		return
 	end
 
+	-- QUEST ITEM CHECK: Check if item is questitem=1 (quest item) before any other processing
+	local item_id = item.ID()
+	local is_quest_item = nil -- Initialize quest detection result (will be set by database or legacy detection)
+	debug_logger.info("QUEST_ITEM_CHECK: Starting check for %s, item_id=%s", item_name, tostring(item_id))
+	
+	if not item_id then
+		debug_logger.warn("QUEST_ITEM_CHECK: %s has nil item_id, skipping database quest detection", item_name)
+	elseif item_id <= 0 then
+		debug_logger.warn("QUEST_ITEM_CHECK: %s has invalid item_id: %d, skipping database quest detection", item_name, item_id)
+	end
+	
+	if item_id and item_id > 0 then
+		debug_logger.info("QUEST_ITEM_CHECK: %s has valid ID: %d, attempting database query", item_name, item_id)
+		
+		local database = require("yalm2.lib.database")
+		local item_db = nil
+		local db_success, db_error = pcall(function()
+			item_db = database.QueryDatabaseForItemId(item_id)
+		end)
+		
+		if not db_success then
+			debug_logger.error("QUEST_ITEM_CHECK: Database query failed for %s (ID: %d): %s", item_name, item_id, tostring(db_error))
+			debug_logger.info("QUEST_ITEM_CHECK: Falling back to non-database quest detection for %s", item_name)
+		else
+			debug_logger.info("QUEST_ITEM_CHECK: %s (ID: %d) Database query result: %s", item_name, item_id, item_db and "found" or "nil")
+		end
+		if item_db then
+			debug_logger.info("QUEST_ITEM_CHECK: %s (ID: %d) DB Fields - questitem: %s, norent: %s, nodrop: %s", 
+				item_name, item_id, tostring(item_db.questitem), tostring(item_db.norent), tostring(item_db.nodrop))
+		else
+			debug_logger.warn("QUEST_ITEM_CHECK: %s (ID: %d) - No database entry found", item_name, item_id)
+		end
+		is_quest_item = item_db and item_db.questitem == 1  -- Set the quest detection result
+		debug_logger.info("QUEST_ITEM_CHECK: %s (ID: %d) Final quest detection logic: item_db=%s, questitem=%s, is_quest=%s", 
+			item_name, item_id, item_db and "exists" or "nil", item_db and tostring(item_db.questitem) or "n/a", tostring(is_quest_item))
+		
+		if is_quest_item then
+			debug_logger.info("QUEST_ITEM_DETECTED: %s is a quest item (questitem=1), using quest distribution logic", item_name)
+			Write.Info("Quest item detected: %s - using quest-specific distribution", item_name)
+			
+			-- Get characters who need this quest item
+			local needed_by = quest_interface.get_characters_needing_item(item_name)
+			debug_logger.info("QUEST_DISTRIBUTION: Characters needing '%s': %s", item_name, 
+				needed_by and table.concat(needed_by, ", ") or "none")
+			
+			if needed_by and #needed_by > 0 then
+				-- Find valid group members who need this item
+				local group_or_raid_tlo = looting.get_group_or_raid_tlo()
+				local count = looting.get_member_count(group_or_raid_tlo)
+				local valid_recipients = {}
+				
+				for _, char_name in ipairs(needed_by) do
+					for i = 0, count do
+						local test_member = looting.get_valid_member(group_or_raid_tlo, i)
+						if test_member and test_member.CleanName():lower() == char_name:lower() then
+							table.insert(valid_recipients, test_member)
+							break
+						end
+					end
+				end
+				
+				if #valid_recipients > 0 then
+					-- Give to first valid recipient who needs it
+					local recipient = valid_recipients[1]
+					Write.Info("QUEST DISTRIBUTION: Giving %s to %s (needs quest item)", item_name, recipient.Name())
+					debug_logger.info("QUEST_DISTRIBUTION: Giving %s to %s", item_name, recipient.Name())
+					looting.give_item(recipient, item_name)
+					mq.delay(global_settings.settings.distribute_delay)
+					return
+				else
+					Write.Warn("QUEST ITEM: %s needed by characters not in group: %s", item_name, table.concat(needed_by, ", "))
+					debug_logger.warn("QUEST_DISTRIBUTION: No valid recipients in group for %s", item_name)
+				end
+			else
+				Write.Info("QUEST ITEM: %s not currently needed by any characters", item_name)
+				debug_logger.info("QUEST_DISTRIBUTION: %s not needed by any characters", item_name)
+			end
+			
+			-- If we get here, no quest distribution occurred, fall through to normal processing
+			debug_logger.info("QUEST_DISTRIBUTION: Falling back to normal processing for %s", item_name)
+		end
+	end
+
 	local can_loot, check_rematch, member, preference = looting.get_member_can_loot(
 		item,
 		global_settings,
@@ -372,7 +509,19 @@ looting.handle_master_looting = function(global_settings)
 	local needed_by = quest_interface.get_characters_needing_item(item_name)
 	local task_name, objective = nil, nil
 	
-	local is_quest_item = (needed_by and #needed_by > 0)
+	-- IMPORTANT: Don't override database quest detection result if it already determined this is a quest item
+	-- Only use legacy detection if database detection wasn't available or didn't find quest status
+	local legacy_quest_detection = (needed_by and #needed_by > 0)
+	-- is_quest_item was already set by database detection above, only override if it wasn't set to true
+	if not is_quest_item then
+		is_quest_item = legacy_quest_detection
+	end
+	
+	debug_logger.info("QUEST_DETECTION_COMPARISON: %s - Database: %s, Legacy: %s, Final: %s", 
+		item_name, 
+		tostring(is_quest_item and not legacy_quest_detection), -- true if database detected but legacy didn't
+		tostring(legacy_quest_detection), 
+		tostring(is_quest_item))
 	
 	if is_quest_item then
 		Write.Error("*** MASTER LOOT DEBUG: First get_member_can_loot result - can_loot: %s, preference: %s, member: %s ***", 
@@ -410,9 +559,8 @@ looting.handle_master_looting = function(global_settings)
 		end
 		
 		-- DIRECT TEST: Check if quest logic is accessible
-		local tasks = require("yalm2.core.tasks")
-		if tasks and tasks.get_characters_needing_item then
-			local needed_by, task_name, objective = tasks.get_characters_needing_item("Blighted Blood Sample")
+		if quest_interface and quest_interface.get_characters_needing_item then
+			local needed_by, task_name, objective = quest_interface.get_characters_needing_item("Blighted Blood Sample")
 			Write.Error("*** DIRECT QUEST TEST: needed_by=[%s], task_name='%s' ***", 
 				needed_by and table.concat(needed_by, ", ") or "nil",
 				task_name or "nil"
@@ -463,13 +611,13 @@ looting.handle_master_looting = function(global_settings)
 						retry_count = retry_count + 1
 						Write.Error("*** QUEST REFRESH: Attempt %d/%d ***", retry_count, max_retries)
 						
-						tasks.request_task_update()
+						-- Native system auto-refreshes, no manual update needed
 						
 						-- Wait for response (TaskHUD usually responds within 1-2 seconds)
 						mq.delay(2000)
 						
 						-- Validate that we got updated quest data
-						if tasks.check_taskhud_response and tasks.check_taskhud_response() then
+						if _G.YALM2_QUEST_DATA then
 							Write.Error("*** QUEST REFRESH: Success on attempt %d ***", retry_count)
 							refresh_success = true
 						else
@@ -486,7 +634,7 @@ looting.handle_master_looting = function(global_settings)
 						Write.Warn("*** Continuing with potentially stale quest data - manual /yalm2 taskinfo refresh recommended ***")
 					else
 						-- Re-check quest data after successful refresh to see if anyone still needs this item type
-						local updated_needed_by, updated_task_name, updated_objective = tasks.get_characters_needing_item(item_name)
+						local updated_needed_by, updated_task_name, updated_objective = quest_interface.get_characters_needing_item(item_name)
 						if updated_needed_by and #updated_needed_by > 0 then
 							Write.Error("*** QUEST REFRESH: After update, %s still needed by [%s] ***", item_name, table.concat(updated_needed_by, ", "))
 							
