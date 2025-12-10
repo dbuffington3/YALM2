@@ -1,6 +1,6 @@
 local quest_interface = require("yalm2.core.quest_interface")
 local mq = require("mq")
-local Write = require("yalm.lib.Write")
+local Write = require("yalm2.lib.Write")
 
 local function action(global_settings, char_settings, args)
 	if not args[2] then

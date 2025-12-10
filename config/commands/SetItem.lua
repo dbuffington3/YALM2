@@ -1,12 +1,12 @@
 local mq = require("mq")
 
-local configuration = require("yalm.config.configuration")
-local settings = require("yalm.config.settings")
+local configuration = require("yalm2.config.configuration")
+local settings = require("yalm2.config.settings")
 
-local evaluate = require("yalm.core.evaluate")
+local evaluate = require("yalm2.core.evaluate")
 
-local utils = require("yalm.lib.utils")
-local Write = require("yalm.lib.Write")
+local utils = require("yalm2.lib.utils")
+local Write = require("yalm2.lib.Write")
 
 local function action(global_settings, char_settings, args)
 	local item_name, global_or_character, preference, scope = nil, "all", nil, nil

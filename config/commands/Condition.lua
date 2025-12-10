@@ -1,4 +1,4 @@
-local configuration = require("yalm.config.configuration")
+local configuration = require("yalm2.config.configuration")
 
 local valid_subcommands = {
 	help = {},

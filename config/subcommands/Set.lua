@@ -1,4 +1,4 @@
-local configuration = require("yalm.config.configuration")
+local configuration = require("yalm2.config.configuration")
 
 local function action(type, subcommands, global_settings, char_settings, args)
 	local type_settings = configuration.types[type].settings

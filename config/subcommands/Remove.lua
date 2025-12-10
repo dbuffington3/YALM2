@@ -1,7 +1,7 @@
-local configuration = require("yalm.config.configuration")
-local settings = require("yalm.config.settings")
+local configuration = require("yalm2.config.configuration")
+local settings = require("yalm2.config.settings")
 
-local utils = require("yalm.lib.utils")
+local utils = require("yalm2.lib.utils")
 
 local function remove_array(global_settings, settings_key, name)
 	local index = utils.find(global_settings[settings_key], name)

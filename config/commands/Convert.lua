@@ -1,13 +1,13 @@
 local mq = require("mq")
 
-local configuration = require("yalm.config.configuration")
-local settings = require("yalm.config.settings")
+local configuration = require("yalm2.config.configuration")
+local settings = require("yalm2.config.settings")
 
-local evaluate = require("yalm.core.evaluate")
+local evaluate = require("yalm2.core.evaluate")
 
-local LIP = require("yalm.lib.LIP")
-local utils = require("yalm.lib.utils")
-local Write = require("yalm.lib.Write")
+local LIP = require("yalm2.lib.LIP")
+local utils = require("yalm2.lib.utils")
+local Write = require("yalm2.lib.Write")
 
 local command = {}
 

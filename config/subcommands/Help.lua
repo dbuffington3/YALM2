@@ -1,6 +1,6 @@
-local configuration = require("yalm.config.configuration")
+local configuration = require("yalm2.config.configuration")
 
-local utils = require("yalm.lib.utils")
+local utils = require("yalm2.lib.utils")
 
 local function action(type, subcommands, global_settings, char_settings, args)
 	local loot_subcommands = {

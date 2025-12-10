@@ -1,14 +1,14 @@
 ---@type Mq
 local mq = require("mq")
 
-local evaluate = require("yalm.core.evaluate")
-local looting = require("yalm.core.looting")
+local evaluate = require("yalm2.core.evaluate")
+local looting = require("yalm2.core.looting")
 
-local Item = require("yalm.definitions.Item")
+local Item = require("yalm2.definitions.Item")
 
-local database = require("yalm.lib.database")
-local utils = require("yalm.lib.utils")
-local Write = require("yalm.lib.Write")
+local database = require("yalm2.lib.database")
+local utils = require("yalm2.lib.utils")
+local Write = require("yalm2.lib.Write")
 
 local function action(global_settings, char_settings, args)
 	local item, item_name = nil, nil

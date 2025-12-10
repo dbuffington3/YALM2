@@ -1,8 +1,8 @@
 local quest_interface = require("yalm2.core.quest_interface")
-local evaluate = require("yalm.core.evaluate")
-local looting = require("yalm.core.looting")
+local evaluate = require("yalm2.core.evaluate")
+local looting = require("yalm2.core.looting")
 local mq = require("mq")
-local Write = require("yalm.lib.Write")
+local Write = require("yalm2.lib.Write")
 
 local function action(global_settings, char_settings, args)
 	Write.Info("=== LOOT EVALUATION DEBUG TEST ===")

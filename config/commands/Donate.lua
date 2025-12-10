@@ -1,9 +1,9 @@
 ---@type Mq
 local mq = require("mq")
 
-local evaluate = require("yalm.core.evaluate")
-local helpers = require("yalm.core.helpers")
-local Write = require("yalm.lib.Write")
+local evaluate = require("yalm2.core.evaluate")
+local helpers = require("yalm2.core.helpers")
+local Write = require("yalm2.lib.Write")
 
 local function is_donate_button_enabled()
 	local handle = "TributeMasterWnd/TMW_DonateButton"

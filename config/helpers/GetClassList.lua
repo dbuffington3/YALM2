@@ -1,4 +1,4 @@
-local classes = require("yalm.definitions.Classes")
+local classes = require("yalm2.definitions.Classes")
 
 local function helper(item)
 	local list = {}
