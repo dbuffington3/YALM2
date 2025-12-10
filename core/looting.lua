@@ -60,6 +60,44 @@ looting.give_item = function(member, item_name)
 	local character_name = member.Name()
 	debug_logger.info("LOOT_DISTRIBUTE: Giving %s to %s", item_name or "item", character_name)
 	
+	-- Log detailed distribution info
+	Write.Error("*** QUEST DISTRIBUTION: %s → %s", item_name or "item", character_name)
+	
+	-- Try to show current inventory quantity from quest data
+	local quest_data_with_qty = _G.YALM2_QUEST_ITEMS_WITH_QTY or ""
+	local current_qty = 0
+	if quest_data_with_qty:len() > 0 and item_name then
+		-- Parse format: "Item:char1:qty1,char2:qty2|Item2:..."
+		for item_data in quest_data_with_qty:gmatch("([^|]+)") do
+			local parts = {}
+			for part in item_data:gmatch("([^:]+)") do
+				table.insert(parts, part)
+			end
+			
+			if parts[1] then
+				local detected_item = parts[1]
+				-- Check if this is the item we're looting
+				if detected_item:lower() == item_name:lower() or 
+				   detected_item:gsub("s$", ""):lower() == item_name:gsub("s$", ""):lower() then
+					-- Found matching item, parse character quantities
+					if #parts > 1 then
+						for i = 2, #parts do
+							local char_qty_pair = parts[i]
+							local char_name_in_data, qty_str = char_qty_pair:match("([^:]+):(.+)")
+							if char_name_in_data and char_name_in_data:lower() == character_name:lower() then
+								current_qty = tonumber(qty_str) or 0
+								break
+							end
+						end
+					end
+					break
+				end
+			end
+		end
+	end
+	
+	Write.Error("  Current inventory: %d, After: %d", current_qty, current_qty + 1)
+	
 	mq.cmdf("/advloot shared 1 giveto %s 1", character_name)
 	
 	-- If this was a quest item, refresh the recipient's task data
@@ -141,6 +179,47 @@ looting.get_member_can_loot = function(item, loot, save_slots, dannet_delay, alw
 	if is_quest_item then
 		Write.Error("*** EARLY QUEST DETECTION: %s needed by [%s] ***", 
 			item_name, table.concat(needed_by, ", "))
+		
+		-- Parse quest data with quantities to show detailed information
+		local quest_data_with_qty = _G.YALM2_QUEST_ITEMS_WITH_QTY or ""
+		local item_quantities = {}  -- Map of character -> {current = X, needed = Y}
+		
+		if quest_data_with_qty:len() > 0 then
+			-- Parse format: "Item:char1:qty1,char2:qty2|Item2:..."
+			for item_data in quest_data_with_qty:gmatch("([^|]+)") do
+				local parts = {}
+				for part in item_data:gmatch("([^:]+)") do
+					table.insert(parts, part)
+				end
+				
+				if parts[1] then
+					local detected_item = parts[1]
+					-- Check if this is the item we're looting (match by canonical name or exact)
+					if detected_item:lower() == item_name:lower() or 
+					   detected_item:gsub("s$", ""):lower() == item_name:gsub("s$", ""):lower() then
+						-- Found matching item, parse character quantities
+						if #parts > 1 then
+							for i = 2, #parts do
+								local char_qty_pair = parts[i]
+								local char_name, qty_str = char_qty_pair:match("([^:]+):(.+)")
+								if char_name and qty_str then
+									local qty = tonumber(qty_str)
+									item_quantities[char_name] = qty or 0
+								end
+							end
+						end
+						break
+					end
+				end
+			end
+		end
+		
+		-- Show detailed quantity information for each character
+		for _, char_name in ipairs(needed_by) do
+			local qty_needed = item_quantities[char_name] or 0
+			Write.Error("  %s: currently has %d, needs %d more (would have %d after)", 
+				char_name, 0, qty_needed, 1)
+		end
 		
 		-- Find valid group members who need this item
 		local count = looting.get_member_count(group_or_raid_tlo)
