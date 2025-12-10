@@ -9,6 +9,9 @@ print("[YALM2] Loading native_tasks.lua module - step 1")
 
 local Write = require("yalm2.lib.Write")
 
+-- Fix the Write prefix to show YALM2 instead of YALM (due to module caching from older YALM system)
+Write.prefix = "\at[\ax\apYALM2\ax\at]\ax"
+
 print("[YALM2] Loading native_tasks.lua module - step 2")
 Write.Info("[NativeQuest] Module loading started")
 

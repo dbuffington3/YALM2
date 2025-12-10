@@ -64,6 +64,10 @@ local mq = require("mq")
 local actors = require("actors")
 local ImGui = require('ImGui')
 local Write = require("yalm2.lib.Write")
+
+-- Fix the Write prefix to show YALM2 instead of YALM (due to module caching from older YALM system)
+Write.prefix = "\at[\ax\apYALM2\ax\at]\ax"
+
 require("yalm2.lib.database")  -- Load the database module to set up the global YALM2_Database table
 
 -- Initialize database connection using the global YALM2_Database variable
