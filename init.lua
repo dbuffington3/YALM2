@@ -42,6 +42,9 @@ local function print_help()
 	Write.Help("\t  \ay/yalm2 nativequest\ax -- Toggle native quest system on/off")
 	Write.Help("\t  \ay/yalm2 taskrefresh\ax -- Force refresh of quest data")
 	Write.Help("\t  \ay/yalm2 dannetdiag\ax -- Run DanNet connectivity diagnostics")
+	Write.Help("\t  \ay/yalm2 simulate <item_name>\ax -- Simulate looting an item by name")
+	Write.Help("\t  \ay/yalm2 simulate id <item_id>\ax -- Simulate looting an item by ID")
+	Write.Help("\t  \ay/yalm2 simulate quest <item_name>\ax -- Simulate quest item")
 
 	configuration.print_type_help(global_settings, configuration.types.command.settings_key)
 end
@@ -88,6 +91,38 @@ local function cmd_handler(...)
 		Write.Info("Running DanNet connectivity diagnostics...")
 		local dannet_diag = require("yalm2.diagnostics.dannet_discovery")
 		dannet_diag.run_full_diagnostics()
+	elseif command == "simulate" then
+		-- Loot simulator command
+		if #args < 2 then
+			Write.Error("Usage: /yalm2 simulate <item_name>")
+			Write.Error("       /yalm2 simulate id <item_id>")
+			Write.Error("       /yalm2 simulate quest <item_name>")
+			return
+		end
+		
+		local simulator = require("yalm2.core.loot_simulator")
+		local sub_command = args[2]
+		
+		if sub_command == "id" then
+			-- Simulate by item ID
+			if #args < 3 then
+				Write.Error("Usage: /yalm2 simulate id <item_id>")
+				return
+			end
+			simulator.simulate_loot(args[3], true, false)
+		elseif sub_command == "quest" then
+			-- Simulate as quest item
+			local item_name = table.concat(args, " ", 3)
+			if item_name == "" then
+				Write.Error("Usage: /yalm2 simulate quest <item_name>")
+				return
+			end
+			simulator.simulate_loot(item_name, false, true)
+		else
+			-- Simulate by item name (combine remaining args as item name)
+			local item_name = table.concat(args, " ", 2)
+			simulator.simulate_loot(item_name, false, false)
+		end
 	elseif loot_command and loot_command.loaded then
 		if not state.command_running then
 			state.command_running = command

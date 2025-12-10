@@ -32,7 +32,25 @@ Database.OpenDatabase = function(path)
 end
 
 Database.QueryDatabaseForItemId = function(item_id)
-	return { name = "TEST_ITEM", questitem = 1 }
+	local item_db = nil
+	
+	-- Try 315 table first
+	local q1 = string.format("SELECT * FROM raw_item_data_315 WHERE id = %d LIMIT 1", item_id)
+	for row in Database.database:nrows(q1) do
+		item_db = row
+		break
+	end
+	
+	if item_db then return item_db end
+	
+	-- Try old table
+	local q2 = string.format("SELECT * FROM raw_item_data WHERE id = %d LIMIT 1", item_id)
+	for row in Database.database:nrows(q2) do
+		item_db = row
+		break
+	end
+	
+	return item_db
 end
 
 local function query_item_name(item_name)
