@@ -407,4 +407,69 @@ function native_tasks.shutdown_collectors()
     native_tasks.shutdown()
 end
 
+--- Get per-character quest item needs
+--- Returns table: { character_name = { item_name = { quantity=N, progress="0/4", is_done=false } } }
+function native_tasks.get_per_character_needs()
+    local needs = {}
+    
+    -- Access the enhanced MQ2 variable that includes quantities
+    -- Format: "Item:char1:qty1,char2:qty2|Item2:char3:qty3|"
+    local success, quest_data_str = pcall(function()
+        if mq.TLO.YALM2_Quest_Items_WithQty then
+            return tostring(mq.TLO.YALM2_Quest_Items_WithQty)
+        end
+        return nil
+    end)
+    
+    if not success or not quest_data_str or quest_data_str == "NULL" or quest_data_str:len() == 0 then
+        Write.Debug("[NativeQuest] No quest data with quantities available yet")
+        return needs
+    end
+    
+    -- Parse the enhanced format: "Item:char1:qty1,char2:qty2|Item2:char3:qty3|"
+    for item_data in quest_data_str:gmatch("([^|]+)") do
+        local parts = {}
+        for part in item_data:gmatch("([^:]+)") do
+            table.insert(parts, part)
+        end
+        
+        if #parts >= 2 then
+            local item_name = parts[1]
+            
+            -- Process character:quantity pairs
+            for i = 2, #parts do
+                local char_entry = parts[i]
+                -- char_entry is "character" or "character,quantity" depending on position
+                
+                -- Handle the case where we have multiple chars separated by commas in the original format
+                -- Need to re-parse more carefully
+                if i == 2 then
+                    -- Rest of string after first colon is "char1:qty1,char2:qty2"
+                    local rest = item_data:sub(item_name:len() + 2)  -- Skip "ItemName:"
+                    
+                    for char_qty_pair in rest:gmatch("([^,]+)") do
+                        local char_name, qty_str = char_qty_pair:match("([^:]+):(.+)")
+                        if char_name then
+                            if not needs[char_name] then
+                                needs[char_name] = {}
+                            end
+                            
+                            local qty = tonumber(qty_str)
+                            needs[char_name][item_name] = {
+                                quantity = qty or 0,
+                                progress = "unknown",
+                                is_done = false
+                            }
+                        end
+                    end
+                    break
+                end
+            end
+        end
+    end
+    
+    Write.Debug("[NativeQuest] Per-character needs parsed: %d characters", #needs)
+    return needs
+end
+
 return native_tasks

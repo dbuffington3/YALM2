@@ -142,6 +142,35 @@ local function extract_quest_item_from_objective(objective_text)
     return nil
 end
 
+--[[
+Parse progress from status string
+Examples:
+  "0/4" → { current = 0, needed = 4 }
+  "2/5" → { current = 2, needed = 5 }
+  "Done" → { current = -1, needed = -1 } (indicates completed)
+Returns: table with current and needed, or nil
+]]--
+local function parse_progress_status(status_string)
+    if not status_string then
+        return nil
+    end
+    
+    if status_string == "Done" then
+        return { current = -1, needed = -1, is_done = true }
+    end
+    
+    local current, needed = status_string:match("(%d+)/(%d+)")
+    if current and needed then
+        return {
+            current = tonumber(current),
+            needed = tonumber(needed),
+            is_done = false
+        }
+    end
+    
+    return nil
+end
+
 -- Prevent multiple instances by checking if we're already loaded
 if _G.yalm2_native_quest_loaded then
     mq.cmd(string.format('/echo %s \\arAlready running - stopping this instance', taskheader))
@@ -760,14 +789,33 @@ local function manual_refresh_with_messages(show_messages)
         peer_list = peer_list
     }
     
-    -- Create MQ2 variable string
+    -- Create MQ2 variable string: "Item:char1:qty1,char2:qty2|Item2:char3:qty3|"
+    -- This includes quantity needed for each character
     local quest_data_string = ""
+    local quest_data_with_qty = ""
+    
     for item_name, char_list in pairs(quest_items) do
         local char_names = {}
+        local char_details = {}  -- Will have "char:qty" format
+        
         for _, char_data in ipairs(char_list) do
             table.insert(char_names, char_data.character)
+            
+            -- Get quantity needed from status field (e.g., "0/4" → need 4)
+            local progress = parse_progress_status(char_data.status)
+            if progress and progress.needed and progress.needed > 0 then
+                table.insert(char_details, char_data.character .. ":" .. tostring(progress.needed))
+            else
+                -- Unknown quantity (shouldn't happen with normal quest data)
+                table.insert(char_details, char_data.character .. ":?")
+            end
         end
+        
+        -- Simple format (just character names) for backwards compatibility
         quest_data_string = quest_data_string .. item_name .. ":" .. table.concat(char_names, ",") .. "|"
+        
+        -- Enhanced format (with quantities) for new distribution logic
+        quest_data_with_qty = quest_data_with_qty .. item_name .. ":" .. table.concat(char_details, ",") .. "|"
     end
     
     -- Update MQ2 variables
@@ -780,10 +828,12 @@ local function manual_refresh_with_messages(show_messages)
         mq.cmd(string.format('/declare YALM2_Quest_Items string outer "%s"', quest_data_string))
         mq.cmd(string.format('/declare YALM2_Quest_Count int outer %d', item_count))
         mq.cmd(string.format('/declare YALM2_Quest_Timestamp int outer %d', mq.gettime()))
+        mq.cmd(string.format('/declare YALM2_Quest_Items_WithQty string outer "%s"', quest_data_with_qty))
     else
         mq.cmd(string.format('/varset YALM2_Quest_Items "%s"', quest_data_string))
         mq.cmd(string.format('/varset YALM2_Quest_Count %d', item_count))
         mq.cmd(string.format('/varset YALM2_Quest_Timestamp %d', mq.gettime()))
+        mq.cmd(string.format('/varset YALM2_Quest_Items_WithQty "%s"', quest_data_with_qty))
     end
     
     -- SHOW MANUAL REFRESH MESSAGES (this is what the user wants to see)

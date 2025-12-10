@@ -134,4 +134,20 @@ quest_interface.toggle_system = function(global_settings)
     return new_system
 end
 
+--- Get per-character quest item needs (quantity required per character per item)
+quest_interface.get_per_character_needs = function()
+    if use_native_system then
+        if native_tasks and native_tasks.get_per_character_needs then
+            return native_tasks.get_per_character_needs()
+        end
+        return {}
+    else
+        -- External system would implement this similarly
+        if external_tasks and external_tasks.get_per_character_needs then
+            return external_tasks.get_per_character_needs()
+        end
+        return {}
+    end
+end
+
 return quest_interface
