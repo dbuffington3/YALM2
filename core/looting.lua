@@ -234,53 +234,22 @@ looting.get_member_can_loot = function(item, loot, save_slots, dannet_delay, alw
 
 	local can_loot, check_rematch, member, preference = false, true, nil, nil
 
-	-- QUEST PRE-CHECK: Handle quest items BEFORE member evaluation
+	-- QUEST ITEM HANDLING: Check if this is a quest item and handle it separately
 	local item_name = item and item.Name() or "unknown"
-	debug_logger.info("QUEST_PRECHECK: Checking if '%s' is needed for quests", item_name)
+	debug_logger.info("LOOT_CHECK: Processing item: %s", item_name)
 	
-	-- Check if global quest data exists
-	if _G.YALM2_QUEST_DATA then
-		local item_count = 0
-		if _G.YALM2_QUEST_DATA.quest_items then
-			for _ in pairs(_G.YALM2_QUEST_DATA.quest_items) do
-				item_count = item_count + 1
-			end
-		end
-		debug_logger.info("QUEST_PRECHECK: Global quest data available with %d item types", item_count)
-		
-		if _G.YALM2_QUEST_DATA.quest_items then
-			local sample_items = {}
-			local count = 0
-			for item_name_key, _ in pairs(_G.YALM2_QUEST_DATA.quest_items) do
-				table.insert(sample_items, item_name_key)
-				count = count + 1
-				if count >= 3 then break end
-			end
-			debug_logger.info("QUEST_PRECHECK: Sample quest items: %s", table.concat(sample_items, ", "))
-		end
-	else
-		debug_logger.warn("QUEST_PRECHECK: No global quest data available (_G.YALM2_QUEST_DATA is nil)")
-	end
-	
+	-- Check if anyone needs this item for a quest
 	local needed_by = quest_interface.get_characters_needing_item(item_name)
-	debug_logger.info("QUEST_PRECHECK: Characters needing '%s': %s", item_name, 
-		needed_by and table.concat(needed_by, ", ") or "none")
 	
-	local task_name = nil  -- Quest interface currently doesn't return task details
-	local objective = nil
-	
-	local is_quest_item = (needed_by and #needed_by > 0)
-	debug_logger.info("QUEST_PRECHECK: '%s' classified as quest item: %s", item_name, tostring(is_quest_item))
-	if is_quest_item then
-		Write.Error("*** EARLY QUEST DETECTION: %s needed by [%s] ***", 
-			item_name, table.concat(needed_by, ", "))
+	if needed_by and #needed_by > 0 then
+		debug_logger.info("QUEST_ITEM: %s is needed for quests by [%s]", item_name, table.concat(needed_by, ", "))
+		Write.Info("Quest item detected: %s - using quest distribution logic", item_name)
 		
-		-- Parse quest data with quantities to show detailed information
+		-- Parse quantities from quest data
+		local item_quantities = {}
 		local quest_data_with_qty = _G.YALM2_QUEST_ITEMS_WITH_QTY or ""
-		local item_quantities = {}  -- Map of character -> {current = X, needed = Y}
 		
 		if quest_data_with_qty:len() > 0 then
-			-- Parse format: "Item:char1:qty1,char2:qty2|Item2:..."
 			for item_data in quest_data_with_qty:gmatch("([^|]+)") do
 				local parts = {}
 				for part in item_data:gmatch("([^:]+)") do
@@ -289,7 +258,6 @@ looting.get_member_can_loot = function(item, loot, save_slots, dannet_delay, alw
 				
 				if parts[1] then
 					local detected_item = parts[1]
-					-- Check if this is the item we're looting (match by canonical name or exact)
 					if detected_item:lower() == item_name:lower() or 
 					   detected_item:gsub("s$", ""):lower() == item_name:gsub("s$", ""):lower() then
 						-- Found matching item, parse character quantities
@@ -309,178 +277,29 @@ looting.get_member_can_loot = function(item, loot, save_slots, dannet_delay, alw
 			end
 		end
 		
-		-- Show detailed quantity information for each character
+		-- Log quantities for debugging
 		for _, char_name in ipairs(needed_by) do
-			local qty_needed = item_quantities[char_name] or 0
-			Write.Error("  %s: currently has %d, needs %d more (would have %d after)", 
-				char_name, 0, qty_needed, 1)
+			local qty = item_quantities[char_name] or 0
+			debug_logger.info("  %s: needs %d more items", char_name, qty)
 		end
 		
-		-- Find valid group members who need this item
-		local count = looting.get_member_count(group_or_raid_tlo)
-		local valid_recipients = {}
+		-- Use quest-specific distribution logic
+		member = looting.get_quest_item_recipient(item_name, needed_by, item_quantities)
 		
-		for _, char_name in ipairs(needed_by) do
-			for i = 0, count do
-				local test_member = looting.get_valid_member(group_or_raid_tlo, i)
-				if test_member and test_member.CleanName():lower() == char_name:lower() then
-					table.insert(valid_recipients, char_name)
-					break
-				end
-			end
-		end
-		
-		if #valid_recipients > 0 then
-			Write.Error("*** EARLY QUEST OVERRIDE: Testing only quest characters [%s] ***", 
-				table.concat(valid_recipients, ", "))
-			
-			-- IMPROVED DISTRIBUTION: Prioritize non-master looters first to avoid ML hoarding
-			local master_looter = mq.TLO.Group.MainAssist.CleanName() or mq.TLO.Me.CleanName()
-			local non_ml_candidates = {}
-			local ml_candidates = {}
-			
-			-- Separate candidates by master looter status
-			for _, recipient_name in ipairs(valid_recipients) do
-				if recipient_name:lower() == master_looter:lower() then
-					table.insert(ml_candidates, recipient_name)
-				else
-					table.insert(non_ml_candidates, recipient_name)
-				end
-			end
-			
-			-- Try non-master looters first, then master looter as fallback
-			local priority_list = {}
-			for _, name in ipairs(non_ml_candidates) do table.insert(priority_list, name) end
-			for _, name in ipairs(ml_candidates) do table.insert(priority_list, name) end
-			
-			Write.Error("*** DISTRIBUTION PRIORITY: Non-ML [%s], ML [%s] ***", 
-				table.concat(non_ml_candidates, ", "), table.concat(ml_candidates, ", "))
-			
-			-- Test candidates in priority order
-			for _, recipient_name in ipairs(priority_list) do
-				for i = 0, count do
-					local test_member = looting.get_valid_member(group_or_raid_tlo, i)
-					if test_member and test_member.CleanName():lower() == recipient_name:lower() then
-						Write.Error("*** TESTING QUEST MEMBER: %s (ML: %s) ***", 
-							test_member.CleanName(), test_member.CleanName():lower() == master_looter:lower() and "YES" or "NO")
-						
-						can_loot, check_rematch, preference =
-							evaluate.check_can_loot(test_member, item, loot, save_slots, dannet_delay, always_loot, unmatched_item_rule)
-
-						if can_loot then
-							member = test_member
-							Write.Error("*** QUEST WINNER: %s (Priority: %s) ***", 
-								member.CleanName(), member.CleanName():lower() == master_looter:lower() and "ML-Fallback" or "Non-ML-Priority")
-							
-							-- LIGHTWEIGHT: Trust cached quest data instead of heavy real-time validation  
-							Write.Info("*** QUEST LOOT: Using cached data to reduce TaskHUD pressure ***")
-							
-							-- Skip complex refresh cycles that cause timing issues with TaskHUD
-							debug_logger.quest("FAST_LOOT: Trusting recent quest data for %s -> %s (avoids TaskHUD race conditions)", 
-								item_name, member.CleanName())
-							
-							-- Proceed with trusted data - much faster and more reliable
-							local refresh_success = true  -- Skip the refresh loop entirely
-							local max_retries = 1
-							local retry_count = 1
-							
-							while not refresh_success and retry_count < max_retries do
-								retry_count = retry_count + 1
-								debug_logger.info("EARLY QUEST REFRESH: Attempt %d/%d", retry_count, max_retries)
-								Write.Error("*** EARLY QUEST REFRESH: Attempt %d/%d ***", retry_count, max_retries)
-								
-								-- Capture pre-refresh state for comparison
-								local pre_refresh_needed = quest_interface.get_characters_needing_item(item_name)
-								debug_logger.quest("PRE-REFRESH STATE: %s needed by [%s]", 
-									item_name, 
-									pre_refresh_needed and table.concat(pre_refresh_needed, ", ") or "none")
-								
-								-- Request task update
-								quest_interface.refresh_all_characters()
-								
-								-- CRITICAL: Wait for task updates to complete by monitoring task system stability
-								local wait_start = os.time()
-								local max_wait_time = 8 -- 8 seconds maximum wait
-								local task_update_complete = false
-								local stable_readings = 0
-								local required_stable_readings = 2 -- Need 2 consistent readings
-								local last_needed_by = nil
-								
-								debug_logger.info("TASK UPDATE MONITOR: Waiting for stable task data...")
-								
-								while (os.time() - wait_start) < max_wait_time do
-									mq.delay(1000) -- Wait 1 second between checks
-									
-									-- Check current quest state
-									local current_needed_by = quest_interface.get_characters_needing_item(item_name)
-									local current_needed_str = current_needed_by and table.concat(current_needed_by, ", ") or "none"
-									
-									debug_logger.debug("TASK STATE CHECK: %s needed by [%s] (reading %d)", 
-										item_name, current_needed_str, stable_readings + 1)
-									
-									-- Compare with last reading to detect stability
-									if last_needed_by == current_needed_str then
-										stable_readings = stable_readings + 1
-										debug_logger.debug("TASK STABILITY: Consistent reading %d/%d", stable_readings, required_stable_readings)
-										
-										if stable_readings >= required_stable_readings then
-											task_update_complete = true
-											debug_logger.info("TASK UPDATE COMPLETE: Stable data after %d seconds", os.time() - wait_start)
-											break
-										end
-									else
-										-- Data changed, reset stability counter
-										stable_readings = 0
-										last_needed_by = current_needed_str
-										debug_logger.debug("TASK DATA CHANGED: Reset stability counter, new state [%s]", current_needed_str)
-									end
-								end
-								
-								if task_update_complete then
-									-- Quest interface handles validation internally
-									refresh_success = true
-									debug_logger.info("EARLY QUEST REFRESH: Success on attempt %d after task synchronization", retry_count)
-									Write.Error("*** EARLY QUEST REFRESH: Success on attempt %d ***", retry_count)
-								else
-									debug_logger.warn("EARLY QUEST REFRESH: Task updates did not stabilize within timeout")
-									Write.Warn("*** EARLY QUEST REFRESH: Failed attempt %d, task data unstable ***", retry_count)
-									if retry_count < max_retries then
-										Write.Info("*** EARLY QUEST REFRESH: Retrying in 2 seconds... ***")
-										mq.delay(2000)
-									end
-								end
-							end
-							
-							if not refresh_success then
-								debug_logger.error("EARLY QUEST REFRESH: All attempts failed! Task updates never stabilized")
-								Write.Error("*** EARLY QUEST REFRESH: All attempts failed! Quest data may be stale ***")
-								Write.Warn("*** DANGER: Proceeding without confirmed task updates - items may go to wrong character ***")
-							else
-								-- Re-check quest data after successful synchronized refresh
-								local updated_needed_by = quest_interface.get_characters_needing_item(item_name)
-								local final_needed_str = updated_needed_by and table.concat(updated_needed_by, ", ") or "none"
-								
-								debug_logger.quest("POST-REFRESH STATE: %s needed by [%s]", 
-									item_name, final_needed_str)
-								
-								if updated_needed_by and #updated_needed_by > 0 then
-									Write.Error("*** TASK UPDATE CONFIRMED: %s still needed by [%s] ***", item_name, table.concat(updated_needed_by, ", "))
-								else
-									Write.Error("*** TASK UPDATE CONFIRMED: No one needs %s anymore ***", item_name)
-								end
-							end
-							
-							return can_loot, check_rematch, member, preference
-						end
-						break
-					end
-				end
-			end
-			
-			-- If no quest characters can take it, fall through to normal evaluation
-			Write.Error("*** NO QUEST CHARACTERS AVAILABLE: Falling back to normal loot rules ***")
+		if member then
+			debug_logger.info("QUEST_DISTRIBUTION: %s → %s", item_name, member.CleanName())
+			Write.Info("Quest item %s going to %s", item_name, member.CleanName())
+			can_loot = true
+			return can_loot, check_rematch, member, preference
+		else
+			debug_logger.info("QUEST_DISTRIBUTION: No valid recipients for %s - item will be left on corpse", item_name)
+			Write.Info("Quest item %s not needed by anyone - leaving on corpse", item_name)
+			return false, check_rematch, nil, preference
 		end
 	end
+	
+	-- NOT A QUEST ITEM: Continue with normal preference-based loot evaluation
+	debug_logger.info("LOOT_CHECK: %s is not a quest item - using normal loot rules", item_name)
 
 	local count = looting.get_member_count(group_or_raid_tlo)
 
