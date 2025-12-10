@@ -126,6 +126,89 @@ looting.loot_item = function()
 	mq.cmd("/advloot personal 1 loot")
 end
 
+--- Quest-specific loot distribution - handles quest items without preference rules
+--- Returns: member to receive item, or nil if no one needs it
+looting.get_quest_item_recipient = function(item_name, needed_by, item_quantities)
+	--[[
+	Quest Item Distribution Logic:
+	1. Check if item is needed by anyone
+	2. If not needed: return nil (leave on corpse)
+	3. If needed: find who needs it MOST (least inventory quantity)
+	   - If Master Looter is in the list, give to others first, ML last
+	   - If tied on quantity, prioritize non-ML characters
+	4. Return the member object for that character
+	]]--
+	
+	if not needed_by or #needed_by == 0 then
+		debug_logger.info("QUEST_DISTRIBUTION: No one needs %s - item will be left on corpse", item_name)
+		return nil
+	end
+	
+	item_quantities = item_quantities or {}
+	local group_or_raid_tlo = looting.get_group_or_raid_tlo()
+	local group_size = looting.get_member_count(group_or_raid_tlo)
+	
+	-- Get Master Looter name for prioritization
+	local master_looter_name = mq.TLO.Group.MainAssist.CleanName() or mq.TLO.Me.CleanName()
+	
+	debug_logger.info("QUEST_DISTRIBUTION: Finding recipient for %s needed by [%s]", 
+		item_name, table.concat(needed_by, ", "))
+	debug_logger.info("QUEST_DISTRIBUTION: Master Looter: %s", master_looter_name)
+	
+	-- Build list of group members who need this item with their quantities
+	local candidates = {}
+	
+	for _, char_name in ipairs(needed_by) do
+		-- Find the group member object
+		for i = 0, group_size do
+			local member = looting.get_valid_member(group_or_raid_tlo, i)
+			if member and member.CleanName():lower() == char_name:lower() then
+				local qty_needed = item_quantities[char_name] or 0
+				local is_ml = (member.CleanName():lower() == master_looter_name:lower())
+				
+				debug_logger.info("QUEST_DISTRIBUTION: Candidate %s - needs %d items, ML: %s", 
+					char_name, qty_needed, tostring(is_ml))
+				
+				table.insert(candidates, {
+					name = char_name,
+					member = member,
+					qty_needed = qty_needed,
+					is_master_looter = is_ml
+				})
+				break
+			end
+		end
+	end
+	
+	if #candidates == 0 then
+		debug_logger.info("QUEST_DISTRIBUTION: No candidates in group need this item")
+		return nil
+	end
+	
+	-- Sort by: quantity needed (ascending), then non-ML first
+	-- This way: 
+	--   - Person needing 2 items gets priority over person needing 1
+	--   - If tied on quantity, non-ML characters get priority (ML gets it last)
+	table.sort(candidates, function(a, b)
+		-- Primary: Person needing more gets priority (descending qty)
+		if a.qty_needed ~= b.qty_needed then
+			return a.qty_needed > b.qty_needed
+		end
+		-- Secondary: Non-ML before ML
+		if a.is_master_looter ~= b.is_master_looter then
+			return not a.is_master_looter  -- false (non-ML) comes before true (ML)
+		end
+		-- Tertiary: Alphabetical for consistency
+		return a.name < b.name
+	end)
+	
+	local winner = candidates[1]
+	debug_logger.info("QUEST_DISTRIBUTION: SELECTED %s (needs %d items, ML: %s)", 
+		winner.name, winner.qty_needed, tostring(winner.is_master_looter))
+	
+	return winner.member
+end
+
 looting.get_member_count = function(tlo)
 	return mq.TLO[tlo].Members() or 0
 end
