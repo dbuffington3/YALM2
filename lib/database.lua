@@ -34,10 +34,24 @@ end
 Database.QueryDatabaseForItemId = function(item_id)
 	local item_db = nil
 	
+	if not Database.database then
+		debug_logger.error("DATABASE: Database.database is nil!")
+		return nil
+	end
+	
 	local query = string.format("SELECT * FROM raw_item_data WHERE id = %d LIMIT 1", item_id)
+	debug_logger.debug("DATABASE: Query: %s", query)
+	
+	local found = false
 	for row in Database.database:nrows(query) do
 		item_db = row
+		found = true
+		debug_logger.debug("DATABASE: Found item id=%d, name=%s", row.id or 0, row.name or "nil")
 		break
+	end
+	
+	if not found then
+		debug_logger.warn("DATABASE: Item id %d not found in raw_item_data", item_id)
 	end
 	
 	return item_db
@@ -47,6 +61,11 @@ local function query_item_name(item_name)
 	
 	local item_db = nil
 	local search_variations = { item_name }
+	
+	if not Database.database then
+		debug_logger.error("DATABASE: Database.database is nil!")
+		return nil
+	end
 	
 	-- Try removing trailing 's' for common plurals (Silks -> Silk)
 	if item_name:match('s$') then
@@ -65,10 +84,19 @@ local function query_item_name(item_name)
 		local escaped = search_term:gsub("'", "''")
 		
 		local query = string.format("SELECT * FROM raw_item_data WHERE name = '%s' LIMIT 1", escaped)
+		debug_logger.debug("DATABASE: Trying variation %d: %s", idx, search_term)
+		
+		local found = false
 		for row in Database.database:nrows(query) do
 			item_db = row
+			found = true
+			debug_logger.debug("DATABASE: Found item id=%d, name=%s", row.id or 0, row.name or "nil")
 			break
 		end
+	end
+	
+	if not item_db then
+		debug_logger.warn("DATABASE: Item '%s' not found in raw_item_data", item_name)
 	end
 	
 	return item_db
