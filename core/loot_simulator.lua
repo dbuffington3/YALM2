@@ -214,48 +214,33 @@ function simulator.simulate_loot(item_name_or_id, is_id, force_quest)
             local member_name = member.CleanName()
             Write.Info("\nTesting: %s", member_name)
             
-            -- Skip quest-only filter if not a quest item
-            if not needed_by or #needed_by == 0 then
-                -- Regular loot evaluation
-                local can_loot, check_rematch, preference = looting.get_member_can_loot(
-                    mock_item, 
-                    mock_loot, 
-                    save_slots, 
-                    dannet_delay, 
-                    always_loot, 
-                    unmatched_item_rule
-                )
-                
-                if can_loot then
-                    Write.Info("  ✓ CAN LOOT")
-                    table.insert(candidates, {
-                        name = member_name,
-                        member = member,
-                        reason = "Regular loot rules passed"
-                    })
-                else
-                    Write.Info("  ✗ CANNOT LOOT (failed preference/inventory checks)")
+            -- Use the main loot evaluation function which handles both quest and regular items
+            local can_loot, check_rematch, preference = looting.get_member_can_loot(
+                mock_item, 
+                mock_loot, 
+                save_slots, 
+                dannet_delay, 
+                always_loot, 
+                unmatched_item_rule
+            )
+            
+            if can_loot then
+                local reason = "Regular loot rules passed"
+                if needed_by and #needed_by > 0 then
+                    reason = "Needs for quest"
                 end
+                Write.Info("  ✓ CAN LOOT (%s)", reason)
+                table.insert(candidates, {
+                    name = member_name,
+                    member = member,
+                    reason = reason
+                })
             else
-                -- Quest item - check if this member needs it
-                local member_needs = false
-                for _, quest_char in ipairs(needed_by) do
-                    if quest_char:lower() == member_name:lower() then
-                        member_needs = true
-                        break
-                    end
+                local reason = "Failed preference/inventory checks"
+                if needed_by and #needed_by > 0 then
+                    reason = "Doesn't need for quest"
                 end
-                
-                if member_needs then
-                    Write.Info("  ✓ QUEST CHARACTER (needs %s)", item_name)
-                    table.insert(candidates, {
-                        name = member_name,
-                        member = member,
-                        reason = "Needs for quest"
-                    })
-                else
-                    Write.Info("  ✗ NOT QUEST CHARACTER (doesn't need %s)", item_name)
-                end
+                Write.Info("  ✗ CANNOT LOOT (%s)", reason)
             end
         end
     end
