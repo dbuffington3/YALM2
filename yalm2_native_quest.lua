@@ -160,7 +160,7 @@ local function parse_progress_status(status_string)
     end
     
     if status_string == "Done" then
-        return { current = -1, needed = -1, is_done = true }
+        return { current = -1, needed = 0, is_done = true }
     end
     
     local current, needed = status_string:match("(%d+)/(%d+)")
