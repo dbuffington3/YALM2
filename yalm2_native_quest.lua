@@ -901,9 +901,9 @@ local function manual_refresh_with_messages(show_messages)
         for _, char_data in ipairs(char_list) do
             table.insert(char_names, char_data.character)
             
-            -- Get quantity needed from status field (e.g., "0/4" → need 4)
+            -- Get quantity needed from status field (e.g., "0/4" → need 4, "Done" → need 0)
             local progress = parse_progress_status(char_data.status)
-            if progress and progress.needed and progress.needed > 0 then
+            if progress and progress.needed then
                 table.insert(char_details, char_data.character .. ":" .. tostring(progress.needed))
             else
                 -- Unknown quantity (shouldn't happen with normal quest data)
