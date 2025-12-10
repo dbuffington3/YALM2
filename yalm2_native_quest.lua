@@ -428,16 +428,10 @@ local function displayGUI()
             print("PER-CHARACTER QUEST ITEM QUANTITIES TEST")
             print(string.rep("=", 60))
             
-            -- Get the parsed needs data
-            local needs = {}
-            local success, quest_data_str = pcall(function()
-                if mq.TLO.YALM2_Quest_Items_WithQty then
-                    return tostring(mq.TLO.YALM2_Quest_Items_WithQty)
-                end
-                return nil
-            end)
+            -- Get the quest data from Lua global (MQ2 variables don't work)
+            local quest_data_str = _G.YALM2_QUEST_ITEMS_WITH_QTY or nil
             
-            if success and quest_data_str and quest_data_str ~= "NULL" and quest_data_str:len() > 0 then
+            if quest_data_str and quest_data_str:len() > 0 then
                 -- Parse the enhanced format: "Item:char1:qty1,char2:qty2|Item2:char3:qty3|"
                 for item_data in quest_data_str:gmatch("([^|]+)") do
                     local parts = {}
@@ -448,10 +442,45 @@ local function displayGUI()
                     if #parts >= 2 then
                         local item_name = parts[1]
                         
+                        -- Validate item exists in database
+                        local db_item = nil
+                        local search_variations = {
+                            item_name,
+                            item_name:gsub("s$", ""),  -- Remove trailing 's' for plural
+                            item_name:lower(),
+                            item_name:lower():gsub("s$", "")
+                        }
+                        
+                        for idx, search_term in ipairs(search_variations) do
+                            if db_item then break end
+                            local escaped = search_term:gsub("'", "''")
+                            
+                            -- Try 315 table
+                            local q1 = string.format("SELECT * FROM raw_item_data_315 WHERE name = '%s' LIMIT 1", escaped)
+                            for row in Database.database:nrows(q1) do
+                                db_item = row
+                                break
+                            end
+                            
+                            if db_item then break end
+                            
+                            -- Try old table
+                            local q2 = string.format("SELECT * FROM raw_item_data WHERE name = '%s' LIMIT 1", escaped)
+                            for row in Database.database:nrows(q2) do
+                                db_item = row
+                                break
+                            end
+                        end
+                        
+                        -- Display item with DB validation status
+                        if db_item then
+                            print(string.format("\n%s (DB: %s) - FOUND ✓", item_name, db_item.name))
+                        else
+                            print(string.format("\n%s - NOT FOUND IN DB ✗", item_name))
+                        end
+                        
                         -- Re-parse to get char:qty pairs
                         local rest = item_data:sub(item_name:len() + 2)  -- Skip "ItemName:"
-                        
-                        print(string.format("\n%s:", item_name))
                         
                         for char_qty_pair in rest:gmatch("([^,]+)") do
                             local char_name, qty_str = char_qty_pair:match("([^:]+):(.+)")
@@ -472,8 +501,6 @@ local function displayGUI()
                 print(string.rep("=", 60) .. "\n")
             end
         end
-        
-        -- Column 2: Dropdowns
         ImGui.NextColumn()
         if #peer_list > 0 then
             -- Character selection dropdown
@@ -871,6 +898,10 @@ local function manual_refresh_with_messages(show_messages)
         quest_data_with_qty = quest_data_with_qty .. item_name .. ":" .. table.concat(char_details, ",") .. "|"
     end
     
+    -- Escape quotes for MQ2 command line
+    local escaped_quest_string = quest_data_string:gsub('"', '\\"')
+    local escaped_qty_string = quest_data_with_qty:gsub('"', '\\"')
+    
     -- Update MQ2 variables
     local item_count = 0
     for _ in pairs(quest_items) do
@@ -878,22 +909,25 @@ local function manual_refresh_with_messages(show_messages)
     end
     
     if not mq.TLO.Defined('YALM2_Quest_Items')() then
-        mq.cmd(string.format('/declare YALM2_Quest_Items string outer "%s"', quest_data_string))
+        mq.cmd(string.format('/declare YALM2_Quest_Items string outer "%s"', escaped_quest_string))
         mq.cmd(string.format('/declare YALM2_Quest_Count int outer %d', item_count))
         mq.cmd(string.format('/declare YALM2_Quest_Timestamp int outer %d', mq.gettime()))
-        mq.cmd(string.format('/declare YALM2_Quest_Items_WithQty string outer "%s"', quest_data_with_qty))
+        mq.cmd(string.format('/declare YALM2_Quest_Items_WithQty string outer "%s"', escaped_qty_string))
     else
-        mq.cmd(string.format('/varset YALM2_Quest_Items "%s"', quest_data_string))
+        mq.cmd(string.format('/varset YALM2_Quest_Items "%s"', escaped_quest_string))
         mq.cmd(string.format('/varset YALM2_Quest_Count %d', item_count))
         mq.cmd(string.format('/varset YALM2_Quest_Timestamp %d', mq.gettime()))
     end
     
     -- Handle the WithQty variable separately since it might not exist yet
     if not mq.TLO.Defined('YALM2_Quest_Items_WithQty')() then
-        mq.cmd(string.format('/declare YALM2_Quest_Items_WithQty string outer "%s"', quest_data_with_qty))
+        mq.cmd(string.format('/declare YALM2_Quest_Items_WithQty string outer "%s"', escaped_qty_string))
     else
-        mq.cmd(string.format('/varset YALM2_Quest_Items_WithQty "%s"', quest_data_with_qty))
+        mq.cmd(string.format('/varset YALM2_Quest_Items_WithQty "%s"', escaped_qty_string))
     end
+    
+    -- Store the quest data in global Lua table for test button access
+    _G.YALM2_QUEST_ITEMS_WITH_QTY = quest_data_with_qty
     
     -- SHOW MANUAL REFRESH MESSAGES (this is what the user wants to see)
     if show_messages then
@@ -1088,17 +1122,39 @@ local function main()
             
             -- AUTOMATIC PROCESSING: SILENT - Update MQ2 variables only, NO USER MESSAGES!
             
-            -- Create quest data string for MQ2 variables
+            -- Create quest data strings for MQ2 variables
             local quest_data_string = ""
+            local quest_data_with_qty = ""
+            
             for item_name, char_list in pairs(quest_items) do
                 local char_names = {}
+                local char_details = {}  -- Will have "char:qty" format
+                
                 for _, char_info in ipairs(char_list) do
                     table.insert(char_names, char_info.character)
+                    
+                    -- Get quantity needed from status field (e.g., "0/4" → need 4)
+                    local progress = parse_progress_status(char_info.status)
+                    if progress and progress.needed and progress.needed > 0 then
+                        table.insert(char_details, char_info.character .. ":" .. tostring(progress.needed))
+                    else
+                        -- Unknown quantity (shouldn't happen with normal quest data)
+                        table.insert(char_details, char_info.character .. ":?")
+                    end
                 end
+                
                 if #char_names > 0 then
+                    -- Simple format (just character names) for backwards compatibility
                     quest_data_string = quest_data_string .. item_name .. ":" .. table.concat(char_names, ",") .. "|"
+                    
+                    -- Enhanced format (with quantities) for new distribution logic
+                    quest_data_with_qty = quest_data_with_qty .. item_name .. ":" .. table.concat(char_details, ",") .. "|"
                 end
             end
+            
+            -- Escape quotes for MQ2 command line
+            local escaped_quest_string = quest_data_string:gsub('"', '\\"')
+            local escaped_qty_string = quest_data_with_qty:gsub('"', '\\"')
             
             -- Update MQ2 variables silently
             local item_count = 0
@@ -1107,14 +1163,25 @@ local function main()
             end
             
             if not mq.TLO.Defined('YALM2_Quest_Items')() then
-                mq.cmd(string.format('/declare YALM2_Quest_Items string outer "%s"', quest_data_string))
+                mq.cmd(string.format('/declare YALM2_Quest_Items string outer "%s"', escaped_quest_string))
                 mq.cmd(string.format('/declare YALM2_Quest_Count int outer %d', item_count))
                 mq.cmd(string.format('/declare YALM2_Quest_Timestamp int outer %d', mq.gettime()))
+                mq.cmd(string.format('/declare YALM2_Quest_Items_WithQty string outer "%s"', escaped_qty_string))
             else
-                mq.cmd(string.format('/varset YALM2_Quest_Items "%s"', quest_data_string))
+                mq.cmd(string.format('/varset YALM2_Quest_Items "%s"', escaped_quest_string))
                 mq.cmd(string.format('/varset YALM2_Quest_Count %d', item_count))
                 mq.cmd(string.format('/varset YALM2_Quest_Timestamp %d', mq.gettime()))
             end
+            
+            -- Handle the WithQty variable separately since it might not exist yet
+            if not mq.TLO.Defined('YALM2_Quest_Items_WithQty')() then
+                mq.cmd(string.format('/declare YALM2_Quest_Items_WithQty string outer "%s"', escaped_qty_string))
+            else
+                mq.cmd(string.format('/varset YALM2_Quest_Items_WithQty "%s"', escaped_qty_string))
+            end
+            
+            -- Store in Lua global as fallback (MQ2 variables not working)
+            _G.YALM2_QUEST_ITEMS_WITH_QTY = quest_data_with_qty
             
             -- NO USER MESSAGES IN AUTOMATIC PROCESSING!
         end
