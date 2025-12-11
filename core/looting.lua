@@ -124,7 +124,6 @@ looting.give_item = function(member, item_name)
 	-- If this was a quest item, refresh the recipient's task data
 	if item_name and quest_interface.is_quest_item(item_name) then
 		debug_logger.quest("QUEST_LOOT: %s received quest item %s - triggering character refresh", character_name, item_name)
-		Write.Info("Quest item %s given to %s - refreshing their task status", item_name, character_name)
 		
 		-- Trigger character-specific task refresh after loot distribution
 		quest_interface.refresh_character_after_loot(character_name, item_name)
