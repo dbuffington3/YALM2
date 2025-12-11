@@ -53,9 +53,7 @@ evaluate.check_can_loot = function(member, item, loot, save_slots, dannet_delay,
 	local char_always_loot = char_settings.settings.always_loot
 	local char_unmatched_item_rule = char_settings.settings.unmatched_item_rule
 
-	Write.Info("[DEBUG] About to call get_loot_preference")
 	local preference = evaluate.get_loot_preference(item, loot, char_settings, char_unmatched_item_rule)
-	Write.Info("[DEBUG] get_loot_preference returned: %s", tostring(preference ~= nil))
 
 	local can_loot = evaluate.check_loot_preference(preference, loot)
 
@@ -333,41 +331,38 @@ evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_ite
 			local is_quest_item = (loot_item.item_db.norent == 1)
 			debug_logger.info("LOOT: Quest Item Detection: %s (NoRent=%s)", tostring(is_quest_item), tostring(loot_item.item_db.norent))
 			
-			-- QUEST SYSTEM CHECK
-			if quest_interface and quest_interface.get_characters_needing_item then
-				debug_logger.info("QUEST: Quest interface available, checking characters needing item...")
-				local success, chars, task_name, objective = pcall(quest_interface.get_characters_needing_item, item_name)
-				if success then
-					debug_logger.info("QUEST: Quest check successful. Characters needing: %d", chars and #chars or 0)
-					if chars and #chars > 0 then
-						debug_logger.info("QUEST: Characters: %s", table.concat(chars, ", "))
-						debug_logger.info("QUEST: Task: %s", tostring(task_name))
-						debug_logger.info("QUEST: Objective: %s", tostring(objective))
-						
-						if is_quest_item then
-							debug_logger.info("QUEST: DIRECT ASSIGNMENT - Quest item needed by quest characters")
-							debug_logger.info("=== LOOT ANALYSIS END: QUEST DIRECT ===")
-							return { 
-								setting = "Keep", 
-								list = chars,
-								data = { quest_item = true, direct_assignment = true, task_name = task_name }
-							}
-						else
-							debug_logger.info("QUEST: Item needed for quest but not flagged as NoRent - using normal loot rules")
-						end
+			-- QUEST SYSTEM CHECK - Use local parsing like the simulator does
+			if quest_interface and quest_interface.get_quest_characters_local then
+				debug_logger.info("QUEST: Using direct local quest character matching (no cross-script calls)...")
+				debug_logger.info("QUEST: Looking for characters needing item: %s", item_name)
+				
+				local chars = quest_interface.get_quest_characters_local(item_name)
+				debug_logger.info("QUEST: Direct local check returned %d characters", chars and #chars or 0)
+				
+				if chars and #chars > 0 then
+					debug_logger.info("QUEST: Characters needing this item: %s", table.concat(chars, ", "))
+					
+					if is_quest_item then
+						debug_logger.info("QUEST: DIRECT ASSIGNMENT - Quest item needed by quest characters")
+						debug_logger.info("=== LOOT ANALYSIS END: QUEST DIRECT ===")
+						return { 
+							setting = "Keep", 
+							list = chars,
+							data = { quest_item = true, direct_assignment = true }
+						}
 					else
-						debug_logger.info("QUEST: No characters need this item for quests")
-						if is_quest_item then
-							debug_logger.info("QUEST: NoRent quest item not needed - ignoring")
-							debug_logger.info("=== LOOT ANALYSIS END: QUEST IGNORE ===")
-							return { setting = "Ignore" }
-						end
+						debug_logger.info("QUEST: Item needed for quest but not flagged as NoRent - using normal loot rules")
 					end
 				else
-					debug_logger.error("QUEST: Quest interface call failed: %s", tostring(chars))
+					debug_logger.info("QUEST: No characters need this item for quests")
+					if is_quest_item then
+						debug_logger.info("QUEST: NoRent quest item not needed - ignoring")
+						debug_logger.info("=== LOOT ANALYSIS END: QUEST IGNORE ===")
+						return { setting = "Ignore" }
+					end
 				end
 			else
-				debug_logger.warn("QUEST: Quest interface not available")
+				debug_logger.warn("QUEST: quest_interface not available with get_quest_characters_local")
 			end
 		else
 			debug_logger.warn("LOOT: No database information available for item")

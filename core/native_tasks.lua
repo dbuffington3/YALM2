@@ -8,6 +8,8 @@ local actors = require("actors")
 print("[YALM2] Loading native_tasks.lua module - step 1")
 
 local Write = require("yalm2.lib.Write")
+local quest_data_store = require("yalm2.lib.quest_data_store")
+local quest_db = require("yalm2.lib.quest_database")
 
 -- Fix the Write prefix to show YALM2 instead of YALM (due to module caching from older YALM system)
 Write.prefix = "\at[\ax\apYALM2\ax\at]\ax"
@@ -138,81 +140,40 @@ function native_tasks.get_all_quest_items()
     Write.Debug("[NativeQuest] get_all_quest_items called")
     local all_quest_items = {}
     
-    -- MQ2 VARIABLE ACCESS: Read quest data from MQ2 variables that work across script contexts
-    Write.Info("[NativeQuest] Reading quest data from MQ2 variables...")
+    -- DATABASE ACCESS: Read quest data from the quest_tasks database
+    Write.Info("[NativeQuest] Reading quest data from database...")
     
-    -- Skip quest data reading during startup to avoid errors
-    -- Return empty quest data - quest system will work once native script initializes
-    Write.Debug("[NativeQuest] Quest system starting - no quest data available yet")
-    local quest_items_string = ""
-    local quest_count = 0
-    local quest_timestamp = 0
+    -- Initialize database if needed
+    if not quest_db.init() then
+        Write.Error("[NativeQuest] Failed to initialize quest database")
+        return all_quest_items
+    end
     
-    Write.Debug("[NativeQuest] MQ2 Variables - Count: %d, Timestamp: %d, Data: '%s'", 
-               quest_count, quest_timestamp, quest_items_string:sub(1, 100))
+    -- Get all quest items from the database
+    local quest_items_by_item = quest_db.get_all_quest_items()
     
-    if quest_count > 0 and quest_items_string and quest_items_string:len() > 0 then
-        -- Parse the quest data string format: "item1:char1,char2|item2:char3,char4|"
-        all_quest_items = {}
+    if quest_items_by_item and next(quest_items_by_item) then
+        -- Convert database format {item_name -> [{character, status}, ...]} 
+        -- to our internal format for compatibility
+        all_quest_items = quest_items_by_item
         
-        for item_data in quest_items_string:gmatch("([^|]+)") do
-            local item_name, char_list_str = item_data:match("([^:]+):(.+)")
-            if item_name and char_list_str then
-                all_quest_items[item_name] = {}
-                for char_name in char_list_str:gmatch("([^,]+)") do
-                    table.insert(all_quest_items[item_name], {
-                        character = char_name,
-                        task_name = "Quest Task",
-                        status = "needed"
-                    })
-                end
-            end
+        local total_items = 0
+        local total_entries = 0
+        for item_name, chars in pairs(all_quest_items) do
+            total_items = total_items + 1
+            total_entries = total_entries + #chars
         end
         
-        Write.Info("[NativeQuest] SUCCESS! Loaded quest data from MQ2 variables:")
-        Write.Info("[NativeQuest] %d quest item types from timestamp %d", quest_count, quest_timestamp)
-        
-        for item_name, char_list in pairs(all_quest_items) do
-            local char_names = {}
-            for _, char_info in ipairs(char_list) do
-                table.insert(char_names, char_info.character)
-            end
-            Write.Info("[NativeQuest] %s needed by [%s]", item_name, table.concat(char_names, ", "))
-        end
-        
+        Write.Info("[NativeQuest] Loaded %d quest items for %d character needs from database", 
+                   total_items, total_entries)
+        Write.Debug("[NativeQuest] Quest items: %s", 
+                   require("yalm2.lib.inspect")(all_quest_items))
     else
-        Write.Warn("[NativeQuest] No quest data in MQ2 variables - make sure yalm2_native_quest.lua is running and generating data")
-        all_quest_items = {}
-        
-        -- Debug what variables exist
-        Write.Debug("[NativeQuest] MQ2 Variable check - YALM2_Quest_Items defined: %s, YALM2_Quest_Count defined: %s", 
-                   tostring(mq.TLO.Defined('YALM2_Quest_Items')() or false),
-                   tostring(mq.TLO.Defined('YALM2_Quest_Count')() or false))
+        Write.Debug("[NativeQuest] No quest items found in database")
     end
-    
-    -- Set the global variable so the precheck system can see it
-    _G.YALM2_QUEST_DATA = {
-        quest_items = all_quest_items,
-        timestamp = mq.gettime(),
-        character_count = 2
-    }
-    
-    local item_count = 0
-    for item_name, _ in pairs(all_quest_items) do
-        item_count = item_count + 1
-    end
-    Write.Info("[NativeQuest] Loaded quest data: " .. item_count .. " quest item types (matching native quest script output)")
-    
-    -- Log the quest items for verification
-    local item_names = {}
-    for item_name, _ in pairs(all_quest_items) do
-        table.insert(item_names, item_name)
-    end
-    Write.Info("[NativeQuest] Quest items: " .. table.concat(item_names, ", "))
     
     return all_quest_items
 end
-
 
 
 --- Check if an item is needed for any character's quests
@@ -283,116 +244,119 @@ end
 
 --- Get characters who need a specific quest item (quest_interface compatibility)
 function native_tasks.get_characters_needing_item(item_name)
-    Write.Info("[NativeQuest] DEBUG: get_characters_needing_item called for: " .. item_name)
     Write.Debug("[NativeQuest] Getting characters needing: %s", item_name)
-    
-    -- Try to get fresh quest data from MQ2 variables first
-    local success, quest_data = pcall(function()
-        if mq.TLO.YALM2_Quest_Items then
-            local items_str = tostring(mq.TLO.YALM2_Quest_Items)
-            if items_str and items_str ~= "NULL" and items_str:len() > 0 then
-                Write.Info("[NativeQuest] Reading live quest data: %s", items_str:sub(1, 100))
-                return items_str, "mq2"
-            end
-        end
-        return nil, nil
-    end)
-    
-    local source = "none"
-    local all_items = {}
-    
-    if success and quest_data then
-        source = quest_data
-        quest_data = quest_data ~= "mq2" and quest_data or nil  -- Extract actual data if source was included
-        
-        -- If we got MQ2 data, parse it
-        if source == "mq2" then
-            -- MQ2 format: "item1:char1,char2|item2:char3,char4|"
-            for item_data in quest_data:gmatch("([^|]+)") do
-                local parsed_item_name, char_list_str = item_data:match("([^:]+):(.+)")
-                if parsed_item_name and char_list_str then
-                    all_items[parsed_item_name] = {}
-                    for char_name in char_list_str:gmatch("([^,]+)") do
-                        table.insert(all_items[parsed_item_name], {
-                            character = char_name,
-                            task_name = "Quest Task",
-                            status = "needed"
-                        })
-                    end
-                end
-            end
-            local item_count = 0
-            for _ in pairs(all_items) do
-                item_count = item_count + 1
-            end
-            Write.Debug("[NativeQuest] Parsed %d quest item types from MQ2 data", item_count)
-        end
-    end
-    
-    -- Fallback to global variable if MQ2 data not available (for simulator)
-    if not success or not quest_data or (source ~= "mq2" and not next(all_items)) then
-        Write.Debug("[NativeQuest] No MQ2 quest data, checking global YALM2_QUEST_ITEMS_WITH_QTY")
-        local global_quest_data = _G.YALM2_QUEST_ITEMS_WITH_QTY or ""
-        if global_quest_data:len() > 0 then
-            -- Global format: "Item:char1:qty1,char2:qty2|Item2:char3:qty3|"
-            for item_data in global_quest_data:gmatch("([^|]+)") do
-                local parts = {}
-                for part in item_data:gmatch("([^:]+)") do
-                    table.insert(parts, part)
-                end
-                
-                if parts[1] then
-                    local parsed_item_name = parts[1]
-                    all_items[parsed_item_name] = all_items[parsed_item_name] or {}
-                    
-                    -- Parse character:quantity pairs
-                    if #parts > 1 then
-                        for i = 2, #parts do
-                            local char_qty_pair = parts[i]
-                            local char_name, qty_str = char_qty_pair:match("([^:]+):(.+)")
-                            if char_name then
-                                table.insert(all_items[parsed_item_name], {
-                                    character = char_name,
-                                    task_name = "Quest Task (Global)",
-                                    status = "needed",
-                                    qty = tonumber(qty_str) or 0
-                                })
-                            end
-                        end
-                    end
-                end
-            end
-            Write.Debug("[NativeQuest] Using global quest data as fallback")
-        end
-    end
     
     local characters_needing = {}
     local task_name = nil
     local objective = nil
     
-    -- Check exact match first
-    if all_items[item_name] then
-        for _, item_info in ipairs(all_items[item_name]) do
-            table.insert(characters_needing, item_info.character)
-            task_name = task_name or item_info.task_name
-            objective = objective or item_info.objective
+    -- PRIMARY: Read from database (populated by manual refresh)
+    local quest_db = require("yalm2.lib.quest_database")
+    if quest_db.init() then
+        local all_items = quest_db.get_all_quest_items()
+        
+        if all_items and next(all_items) then
+            -- Check exact match first
+            if all_items[item_name] then
+                Write.Debug("[NativeQuest] Found exact match for '%s' in database", item_name)
+                for _, char_info in ipairs(all_items[item_name]) do
+                    table.insert(characters_needing, char_info.character)
+                    -- Note: database doesn't store task_name/objective, only status
+                end
+                Write.Debug("[NativeQuest] Found %d characters needing %s (exact match)", #characters_needing, item_name)
+                return characters_needing, task_name, objective
+            end
+            
+            -- Check plural/singular variations (e.g., "Tanglefang Pelt" vs "Tanglefang Pelts")
+            for quest_item_name, char_list in pairs(all_items) do
+                local is_plural_match = false
+                
+                -- Try removing trailing 's' from each name and comparing
+                local item_singular = item_name:gsub("s$", "")
+                local quest_singular = quest_item_name:gsub("s$", "")
+                
+                -- Match if either removing 's' makes them equal (case-insensitive)
+                if (item_singular ~= item_name or quest_singular ~= quest_item_name) then
+                    if item_singular:lower() == quest_singular:lower() then
+                        is_plural_match = true
+                    end
+                end
+                
+                if is_plural_match then
+                    Write.Debug("[NativeQuest] Found plural/singular match: '%s' vs '%s'", quest_item_name, item_name)
+                    for _, char_info in ipairs(char_list) do
+                        table.insert(characters_needing, char_info.character)
+                    end
+                    Write.Debug("[NativeQuest] Found %d characters needing %s (plural/singular match)", #characters_needing, item_name)
+                    return characters_needing, task_name, objective
+                end
+            end
+            
+            -- Check partial matches
+            for quest_item_name, char_list in pairs(all_items) do
+                if quest_item_name:lower():find(item_name:lower()) or 
+                   item_name:lower():find(quest_item_name:lower()) then
+                    Write.Debug("[NativeQuest] Found partial match: '%s' contains '%s'", quest_item_name, item_name)
+                    for _, char_info in ipairs(char_list) do
+                        table.insert(characters_needing, char_info.character)
+                    end
+                end
+            end
+        else
+            Write.Debug("[NativeQuest] Database has no quest items - database may be empty")
         end
-        Write.Debug("[NativeQuest] Found %d characters needing %s (exact match)", #characters_needing, item_name)
-        return characters_needing, task_name, objective
+    else
+        Write.Error("[NativeQuest] Failed to initialize database")
     end
     
-    -- Check partial matches
-    for quest_item_name, item_infos in pairs(all_items) do
-        if quest_item_name:lower():find(item_name:lower()) or 
-           item_name:lower():find(quest_item_name:lower()) then
-            for _, item_info in ipairs(item_infos) do
-                table.insert(characters_needing, item_info.character)
-                task_name = task_name or item_info.task_name
-                objective = objective or item_info.objective
+    -- Fallback to in-memory data if database is empty
+    if #characters_needing == 0 then
+        Write.Debug("[NativeQuest] No results from database, trying in-memory fallback")
+        
+        if not _G.YALM2_QUEST_DATA or not _G.YALM2_QUEST_DATA.quest_items then
+            Write.Debug("[NativeQuest] YALM2_QUEST_DATA not populated yet, calling get_all_quest_items()")
+            native_tasks.get_all_quest_items()
+        end
+        
+        local quest_data = _G.YALM2_QUEST_DATA
+        local wait_count = 0
+        while (not quest_data or not quest_data.quest_items) and wait_count < 50 do
+            mq.delay(100)
+            quest_data = _G.YALM2_QUEST_DATA
+            wait_count = wait_count + 1
+        end
+        
+        if quest_data and quest_data.quest_items then
+            Write.Debug("[NativeQuest] Using in-memory YALM2_QUEST_DATA with %d characters", quest_data.character_count or 0)
+            
+            -- Same matching logic as database
+            if quest_data.quest_items[item_name] then
+                for _, char_info in ipairs(quest_data.quest_items[item_name]) do
+                    table.insert(characters_needing, char_info.character)
+                    task_name = task_name or char_info.task_name
+                    objective = objective or char_info.objective
+                end
+            else
+                -- Check plural/singular and partial matches in in-memory data
+                for quest_item_name, char_list in pairs(quest_data.quest_items) do
+                    local item_singular = item_name:gsub("s$", "")
+                    local quest_singular = quest_item_name:gsub("s$", "")
+                    
+                    if (item_singular ~= item_name or quest_singular ~= quest_item_name) and
+                       item_singular:lower() == quest_singular:lower() then
+                        for _, char_info in ipairs(char_list) do
+                            table.insert(characters_needing, char_info.character)
+                            task_name = task_name or char_info.task_name
+                            objective = objective or char_info.objective
+                        end
+                        break
+                    end
+                end
             end
         end
     end
     
+    Write.Debug("[NativeQuest] Final result for '%s': found %d characters", item_name, #characters_needing)
     return characters_needing, task_name, objective
 end
 
@@ -514,6 +478,80 @@ function native_tasks.get_per_character_needs()
     
     Write.Debug("[NativeQuest] Per-character needs parsed: %d characters", #needs)
     return needs
+end
+
+--- TEST FUNCTION: Set a test MQ2 variable to verify communication is working
+--- Call this from YALM2 to set a test variable, then check if yalm2_native_quest can read it
+function native_tasks.test_set_mq2_variable()
+    Write.Info("[TEST] Setting test MQ2 variable from native_tasks...")
+    local test_data = "TEST_DATA_FROM_NATIVE_TASKS_" .. os.time()
+    
+    -- Set the test variable
+    mq.cmd(string.format('/declare YALM2_Test_Var string outer "%s"', test_data))
+    mq.delay(100)
+    mq.cmd(string.format('/varset YALM2_Test_Var "%s"', test_data))
+    
+    Write.Info("[TEST] Set YALM2_Test_Var = %s", test_data)
+    return test_data
+end
+
+--- TEST FUNCTION: Try to read a test MQ2 variable to verify communication is working
+--- Call this to see if you can read variables that were set by other scripts
+function native_tasks.test_read_mq2_variable()
+    Write.Info("[TEST] Attempting to read test MQ2 variable from native_tasks...")
+    
+    local success, result = pcall(function()
+        local var_defined = mq.TLO.Defined('YALM2_Test_Var')
+        if var_defined and var_defined() then
+            return tostring(mq.TLO.YALM2_Test_Var() or "NULL")
+        end
+        return "NOT_DEFINED"
+    end)
+    
+    if success then
+        Write.Info("[TEST] Successfully read YALM2_Test_Var = %s", result)
+        return result
+    else
+        Write.Info("[TEST] FAILED to read YALM2_Test_Var: %s", result)
+        return nil
+    end
+end
+
+--- TEST FUNCTION: Continuously monitor an MQ2 variable for changes
+--- Use this to verify variables are being updated in real-time
+function native_tasks.test_monitor_variable(var_name, duration_seconds)
+    var_name = var_name or "YALM2_Test_Var"
+    duration_seconds = duration_seconds or 30
+    
+    Write.Info("[TEST] Monitoring %s for %d seconds...", var_name, duration_seconds)
+    
+    local start_time = mq.gettime()
+    local last_value = nil
+    local change_count = 0
+    
+    while (mq.gettime() - start_time) < (duration_seconds * 1000) do
+        local success, result = pcall(function()
+            local var_defined = mq.TLO.Defined(var_name)
+            if var_defined and var_defined() then
+                return tostring(mq.TLO[var_name]() or "NULL")
+            end
+            return "NOT_DEFINED"
+        end)
+        
+        if success then
+            if result ~= last_value then
+                Write.Info("[TEST] %s changed to: %s (change #%d)", var_name, result, change_count + 1)
+                last_value = result
+                change_count = change_count + 1
+            end
+        else
+            Write.Info("[TEST] Error reading %s: %s", var_name, result)
+        end
+        
+        mq.delay(1000)  -- Check every second
+    end
+    
+    Write.Info("[TEST] Monitor complete. Variable changed %d times in %d seconds", change_count, duration_seconds)
 end
 
 return native_tasks

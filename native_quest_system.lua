@@ -70,16 +70,12 @@ end
 
 -- Message handler - TaskHUD's exact pattern
 local actor = actors.register(function(message)
-    Write.Debug("Received message: " .. (message.content.id or "unknown"))
-    
     if message.content.id == 'REQUEST_TASKS' then
-        Write.Debug("Handling REQUEST_TASKS message")
         triggers.need_task_update = true
         peer_list = {}
         task_data.tasks = {}
         
     elseif message.content.id == 'INCOMING_TASKS' then
-        Write.Debug("Handling INCOMING_TASKS from " .. message.sender.character)
         if show_ui then  -- Only process if we're the UI instance
             task_data.tasks[message.sender.character] = message.content.tasks
             table.insert(peer_list, message.sender.character)
@@ -88,33 +84,27 @@ local actor = actors.register(function(message)
         triggers.timestamp = mq.gettime()
         
     elseif message.content.id == 'TASKS_UPDATED' then
-        Write.Debug("Handling TASKS_UPDATED message")
         if mq.gettime() > triggers.timestamp + 1500 then
             triggers.do_refresh = true
         end
         
     elseif message.content.id == 'END_SCRIPT' then
-        Write.Debug("Handling END_SCRIPT message")
         running = false
     end
 end)
 
 local function request_task_update()
-    Write.Debug("Requesting task update from all characters")
     actor:send({ id = 'REQUEST_TASKS' })
 end
 
 local function update_tasks()
-    Write.Debug("Updating tasks for " .. my_name)
     task_data.my_tasks = get_tasks()
     mq.delay(3000, function() return not mq.TLO.Window('TaskWnd').Open() end)
-    Write.Debug("Sending INCOMING_TASKS with " .. #task_data.my_tasks .. " tasks")
     actor:send({ id = 'INCOMING_TASKS', tasks = task_data.my_tasks })
 end
 
 -- Task update events (TaskHUD's exact events)
 local function update_event()
-    Write.Debug("Task update event triggered")
     actors:send({ id = 'TASKS_UPDATED' })
 end
 

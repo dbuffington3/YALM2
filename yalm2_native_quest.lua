@@ -64,6 +64,8 @@ local mq = require("mq")
 local actors = require("actors")
 local ImGui = require('ImGui')
 local Write = require("yalm2.lib.Write")
+local quest_data_store = require("yalm2.lib.quest_data_store")
+local quest_db = require("yalm2.lib.quest_database")
 
 -- Fix the Write prefix to show YALM2 instead of YALM (due to module caching from older YALM system)
 Write.prefix = "\at[\ax\apYALM2\ax\at]\ax"
@@ -100,6 +102,9 @@ local triggers = {
     need_yalm2_data_send = false,
     last_data_send = 0
 }
+
+-- UI view mode (0 = Task view, 1 = Database view)
+local ui_view_mode = 0
 
 local taskheader = "\\ay[\\agYALM2 Native Quest\\ay]"  -- Colored for /echo commands
 local taskheader_plain = "[YALM2 Native Quest]"            -- Plain for print() statements
@@ -398,6 +403,71 @@ local function draw_colored_indicator(color_r, color_g, color_b, text, is_ml)
     end
 end
 
+local function display_database_table()
+    -- Initialize database
+    if not quest_db.init() then
+        ImGui.Text("ERROR: Failed to initialize quest database!")
+        return
+    end
+    
+    -- Get all quest items from database
+    local quest_items = quest_db.get_all_quest_items()
+    
+    if not quest_items or not next(quest_items) then
+        ImGui.TextColored(1, 1, 0, 1, "Database is empty")
+        ImGui.Text("Run '/yalm2quest refresh' to sync character quest data to database")
+        return
+    end
+    
+    -- Create a table showing all items and who needs them
+    if ImGui.BeginTable('##DatabaseTable', 3, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.RowBg, ImGuiTableFlags.Resizable)) then
+        ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
+        ImGui.TableSetupColumn("Character", ImGuiTableColumnFlags.WidthFixed, 120)
+        ImGui.TableSetupColumn("Status", ImGuiTableColumnFlags.WidthFixed, 100)
+        ImGui.TableHeadersRow()
+        
+        local item_count = 0
+        local total_entries = 0
+        
+        for item_name, characters in pairs(quest_items) do
+            item_count = item_count + 1
+            
+            for i, char_info in ipairs(characters) do
+                total_entries = total_entries + 1
+                ImGui.TableNextRow()
+                
+                -- Item Name (only show for first entry of each item)
+                ImGui.TableNextColumn()
+                if i == 1 then
+                    ImGui.Text(item_name)
+                end
+                
+                -- Character Name
+                ImGui.TableNextColumn()
+                ImGui.Text(char_info.character or "unknown")
+                
+                -- Status (color-coded)
+                ImGui.TableNextColumn()
+                local status = char_info.status or "unknown"
+                if status == "Done" or status == "completed" then
+                    ImGui.TextColored(0, 1, 0, 1, status)  -- Green for done
+                elseif status:match("^%d+/%d+$") then
+                    -- Progress format like "2/4"
+                    ImGui.TextColored(1, 1, 0, 1, status)  -- Yellow for in progress
+                else
+                    ImGui.Text(status)  -- Default color for other statuses
+                end
+            end
+        end
+        
+        ImGui.EndTable()
+        
+        -- Show statistics
+        ImGui.Separator()
+        ImGui.Text(string.format("Items: %d | Total Needs: %d", item_count, total_entries))
+    end
+end
+
 local function displayGUI()
     if not drawGUI then return end
     
@@ -410,8 +480,27 @@ local function displayGUI()
     if show then
         -- Initialize UI selection to master looter
         initialize_ui_selection()
-        -- Two-column layout for header
-        ImGui.Columns(2, nil, false)
+        
+        -- View mode tabs
+        ImGui.Text("View:")
+        ImGui.SameLine()
+        if ImGui.Button("Tasks##ViewMode0", 80, 0) then
+            ui_view_mode = 0
+        end
+        ImGui.SameLine()
+        if ImGui.Button("Database##ViewMode1", 80, 0) then
+            ui_view_mode = 1
+        end
+        ImGui.Separator()
+        
+        -- Display appropriate view
+        if ui_view_mode == 1 then
+            -- Database View
+            display_database_table()
+        else
+            -- Task View (original)
+            -- Two-column layout for header
+            ImGui.Columns(2, nil, false)
         
         -- Column 1: Labels + Refresh button
         ImGui.Text("Characters tracked: " .. #peer_list)
@@ -479,11 +568,13 @@ local function displayGUI()
                         for char_qty_pair in rest:gmatch("([^,]+)") do
                             local char_name, qty_str = char_qty_pair:match("([^:]+):(.+)")
                             if char_name then
-                                local qty = tonumber(qty_str)
-                                if qty then
+                                local qty = tonumber(qty_str) or 0  -- Treat "?" as 0
+                                if qty > 0 then
                                     print(string.format("  %-15s needs %d", char_name, qty))
+                                elseif qty_str == "?" then
+                                    print(string.format("  %-15s DONE ✓ (unknown status, assuming complete)", char_name))
                                 else
-                                    print(string.format("  %-15s needs ? (parse error)", char_name))
+                                    print(string.format("  %-15s DONE ✓", char_name))
                                 end
                             end
                         end
@@ -493,6 +584,46 @@ local function displayGUI()
             else
                 print("ERROR: No quest data available - run Refresh Quest Data first!")
                 print(string.rep("=", 60) .. "\n")
+            end
+        end
+        
+        ImGui.SameLine()
+        
+        -- Database View button
+        if ImGui.Button("Show Database") then
+            print("\n" .. string.rep("=", 80))
+            print("QUEST DATABASE CONTENTS")
+            print(string.rep("=", 80))
+            
+            -- Initialize database
+            if not quest_db.init() then
+                print("ERROR: Failed to initialize quest database!")
+                print(string.rep("=", 80) .. "\n")
+            else
+                -- Get all quest items from database
+                local quest_items = quest_db.get_all_quest_items()
+                
+                if not quest_items or not next(quest_items) then
+                    print("Database is empty. Run '/yalm2quest refresh' to populate it.")
+                else
+                    -- Group by item name and show who needs it
+                    for item_name, characters in pairs(quest_items) do
+                        print(string.format("\n%s:", item_name))
+                        for _, char_info in ipairs(characters) do
+                            local status_display = char_info.status or "unknown"
+                            print(string.format("  %-15s → %s", char_info.character, status_display))
+                        end
+                    end
+                end
+                
+                -- Show database statistics
+                local status = quest_db.get_status()
+                if status.valid then
+                    print("\n" .. string.rep("-", 80))
+                    print(string.format("Database Stats: %d total tasks, %d characters", 
+                                      status.total_tasks, status.characters))
+                end
+                print(string.rep("=", 80) .. "\n")
             end
         end
         
@@ -727,6 +858,7 @@ local function displayGUI()
             ImGui.Text("Make sure other characters are in your group/raid")
             ImGui.Text("and have DanNet enabled")
         end
+        end  -- End of Task View else block
     end
     ImGui.End()
 end
@@ -788,13 +920,22 @@ local function manual_refresh_with_messages(show_messages)
     Write.Debug("MANUAL_REFRESH: Starting manual refresh with %d characters", #peer_list)
     local task_count = 0
     for _ in pairs(task_data.tasks or {}) do task_count = task_count + 1 end
-    Write.Debug("MANUAL_REFRESH: Processing %d characters with task data", task_count)
+    Write.Debug("MANUAL_REFRESH: Processing %d characters with task data (plus ML's own tasks)", task_count)
     
     -- Process quest data with messages enabled (user-initiated refresh)
     local quest_items = {}
-    -- CRITICAL: Use task_data.tasks (same source as UI display) 
-    -- This data is populated by DanNet actor messages from all characters
+    -- CRITICAL: Include both ML's own tasks and collector tasks
+    -- Build a combined task list with ML's tasks included
+    local all_tasks = {}
+    if task_data.my_tasks and #task_data.my_tasks > 0 then
+        all_tasks[my_name] = task_data.my_tasks
+    end
     for character_name, tasks in pairs(task_data.tasks) do
+        all_tasks[character_name] = tasks
+    end
+    
+    -- Process all tasks (ML + collectors)
+    for character_name, tasks in pairs(all_tasks) do
         for _, task in ipairs(tasks) do
             if task.objectives then
                 for _, objective in ipairs(task.objectives) do
@@ -844,13 +985,16 @@ local function manual_refresh_with_messages(show_messages)
                                 if db_item.questitem == 1 then
                                     Write.Debug("MANUAL_REFRESH: Confirmed quest item in database: '%s'", db_item.name)
                                     
+                                    -- Use the canonical item name from database, not the extracted/fuzzy-matched name
+                                    local canonical_item_name = db_item.name
+                                    
                                     -- Add to quest items if not already added for this character
-                                    if not quest_items[item_name] then
-                                        quest_items[item_name] = {}
+                                    if not quest_items[canonical_item_name] then
+                                        quest_items[canonical_item_name] = {}
                                     end
                                     
                                     local already_added = false
-                                    for _, existing in ipairs(quest_items[item_name]) do
+                                    for _, existing in ipairs(quest_items[canonical_item_name]) do
                                         if existing.character == character_name then
                                             already_added = true
                                             break
@@ -858,7 +1002,7 @@ local function manual_refresh_with_messages(show_messages)
                                     end
                                     
                                     if not already_added then
-                                        table.insert(quest_items[item_name], {
+                                        table.insert(quest_items[canonical_item_name], {
                                             character = character_name,
                                             task_name = task.task_name,  -- CRITICAL: Use task.task_name NOT task.name
                                             objective = objective.objective,  -- CRITICAL: Use objective.objective NOT objective.text
@@ -922,28 +1066,29 @@ local function manual_refresh_with_messages(show_messages)
     local escaped_quest_string = quest_data_string:gsub('"', '\\"')
     local escaped_qty_string = quest_data_with_qty:gsub('"', '\\"')
     
-    -- Update MQ2 variables
+    -- DEBUG: Log what we're about to set
+    Write.Debug("[MANUAL_REFRESH] About to set shared quest data: len=%d, value=%s", escaped_qty_string:len(), escaped_qty_string:sub(1, 50))
+    
+    -- Store in shared quest data store (works across script isolation boundaries)
+    quest_data_store.set_quest_data_with_qty(quest_data_with_qty)
+    quest_data_store.set_quest_data(quest_data_string)
+    
+    -- Calculate item count for logging
     local item_count = 0
     for _ in pairs(quest_items) do
         item_count = item_count + 1
     end
     
-    if not mq.TLO.Defined('YALM2_Quest_Items')() then
-        mq.cmd(string.format('/declare YALM2_Quest_Items string outer "%s"', escaped_quest_string))
-        mq.cmd(string.format('/declare YALM2_Quest_Count int outer %d', item_count))
-        mq.cmd(string.format('/declare YALM2_Quest_Timestamp int outer %d', mq.gettime()))
-        mq.cmd(string.format('/declare YALM2_Quest_Items_WithQty string outer "%s"', escaped_qty_string))
+    -- Store quest items in the database for persistence across sessions
+    if not quest_db.init() then
+        Write.Error("Failed to initialize quest database during refresh")
     else
-        mq.cmd(string.format('/varset YALM2_Quest_Items "%s"', escaped_quest_string))
-        mq.cmd(string.format('/varset YALM2_Quest_Count %d', item_count))
-        mq.cmd(string.format('/varset YALM2_Quest_Timestamp %d', mq.gettime()))
-    end
-    
-    -- Handle the WithQty variable separately since it might not exist yet
-    if not mq.TLO.Defined('YALM2_Quest_Items_WithQty')() then
-        mq.cmd(string.format('/declare YALM2_Quest_Items_WithQty string outer "%s"', escaped_qty_string))
-    else
-        mq.cmd(string.format('/varset YALM2_Quest_Items_WithQty "%s"', escaped_qty_string))
+        -- Write the quest items to the database using the new refresh function
+        if quest_db.store_quest_items_from_refresh(quest_items) then
+            Write.Debug("[MANUAL_REFRESH] Stored %d quest items in database for %d characters", item_count, #peer_list)
+        else
+            Write.Error("[MANUAL_REFRESH] Failed to store quest items in database")
+        end
     end
     
     -- Store the quest data in global Lua table for test button access
@@ -1056,7 +1201,16 @@ local function main()
             -- Parse quest items from all character task data (SILENT PROCESSING - NO USER MESSAGES!)
             local quest_items = {}
             -- CRITICAL: Use same data source and logic as manual refresh
+            -- Include both ML's own tasks (task_data.my_tasks) and other characters' tasks (task_data.tasks)
+            local all_tasks = {}
+            if task_data.my_tasks and #task_data.my_tasks > 0 then
+                all_tasks[my_name] = task_data.my_tasks
+            end
             for character_name, tasks in pairs(task_data.tasks) do
+                all_tasks[character_name] = tasks
+            end
+            
+            for character_name, tasks in pairs(all_tasks) do
                 for _, task in ipairs(tasks) do
                     for _, objective in ipairs(task.objectives) do
                         -- Use same smart extraction as manual refresh
@@ -1193,8 +1347,22 @@ local function main()
                 mq.cmd(string.format('/varset YALM2_Quest_Items_WithQty "%s"', escaped_qty_string))
             end
             
-            -- Store in Lua global as fallback (MQ2 variables not working)
-            _G.YALM2_QUEST_ITEMS_WITH_QTY = quest_data_with_qty
+            -- DEBUG: Brief verification (only in debug mode to avoid spam)
+            if debug_mode then
+                if mq.TLO.Defined('YALM2_Quest_Items_WithQty')() then
+                    local raw_val = mq.TLO.YALM2_Quest_Items_WithQty
+                    if raw_val then
+                        local str_val = tostring(raw_val)
+                        if str_val and str_val ~= "nil" and str_val ~= "" then
+                            Write.Debug("[AUTO_UPDATE] VERIFIED: MQ2 variable readable (len=%d)", str_val:len())
+                        end
+                    end
+                end
+            end
+            
+            -- Store in shared quest data store (works across script isolation boundaries)
+            quest_data_store.set_quest_data_with_qty(quest_data_with_qty)
+            quest_data_store.set_quest_data(quest_data_string)
             
             -- NO USER MESSAGES IN AUTOMATIC PROCESSING!
         end

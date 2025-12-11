@@ -139,7 +139,20 @@ local function cmd_handler(...)
 	end
 end
 
+local function clear_character_logs()
+	-- Clear all character logs on startup (like we do with the debug log)
+	local log_dir = "c:/MQ2/logs/"
+	local log_pattern = "^bristle_.*%.log$"
+	
+	-- Try to clear logs using PowerShell on Windows
+	local cmd = 'powershell -Command "Get-ChildItem \\"c:\\MQ2\\logs\\" -Filter \\"bristle_*.log\\" | Remove-Item -ErrorAction SilentlyContinue"'
+	os.execute(cmd)
+end
+
 local function initialize()
+	-- Clear character logs on startup
+	clear_character_logs()
+	
 	-- Clean up any existing native quest instances on startup
 	Write.Info("Cleaning up any existing native quest scripts...")
 	mq.cmd('/dgga /lua stop yalm2/yalm2_native_quest')
@@ -194,7 +207,7 @@ end
 local function main()
 	initialize()
 
-		while not state.terminate and mq.TLO.MacroQuest.GameState() == "INGAME" do
+	while not state.terminate and mq.TLO.MacroQuest.GameState() == "INGAME" do
 		if not mq.TLO.Me.Dead() then
 			global_settings, char_settings = settings.reload_settings(global_settings, char_settings)
 

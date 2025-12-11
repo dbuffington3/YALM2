@@ -114,6 +114,7 @@ function simulator.simulate_loot(item_name_or_id, is_id, force_quest)
     Write.Info("=" .. string.rep("=", 58) .. "=")
     Write.Info("LOOT SIMULATOR - Testing Distribution Logic")
     Write.Info("=" .. string.rep("=", 58) .. "=")
+    Write.Error("[ENTRY] Parameters: item_name_or_id=%s, is_id=%s, force_quest=%s", tostring(item_name_or_id), tostring(is_id), tostring(force_quest))
     
     local item_id, item_name
     
@@ -167,29 +168,56 @@ function simulator.simulate_loot(item_name_or_id, is_id, force_quest)
     
     -- Check if this is a quest item
     local needed_by = nil
+    Write.Error("[QUEST CHECK] Starting quest detection. force_quest=%s, global var=%s", tostring(force_quest), tostring(_G.YALM2_QUEST_ITEMS_WITH_QTY ~= nil))
+    Write.Debug("DEBUG: force_quest=%s, YALM2_QUEST_ITEMS_WITH_QTY=%s", tostring(force_quest), tostring(_G.YALM2_QUEST_ITEMS_WITH_QTY))
+    
     if force_quest or _G.YALM2_QUEST_ITEMS_WITH_QTY then
+        Write.Error("[QUEST BLOCK] Entering quest detection block")
         -- Parse quest data to check if this item is needed
         local quest_data = _G.YALM2_QUEST_ITEMS_WITH_QTY or ""
         if quest_data:len() > 0 then
             for item_data in quest_data:gmatch("([^|]+)") do
-                local parts = {}
-                for part in item_data:gmatch("([^:]+)") do
-                    table.insert(parts, part)
-                end
+                -- Parse: "ItemName:char1:qty1,char2:qty2"
+                local quest_item_name, char_list_str = item_data:match("^([^:]+):(.+)$")
                 
-                if parts[1] and (parts[1] == item_name or parts[1]:lower() == item_name:lower()) then
-                    -- Found matching quest item
-                    needed_by = {}
-                    if #parts > 1 then
-                        for i = 2, #parts do
-                            local char_qty_pair = parts[i]
-                            local char_name, qty_str = char_qty_pair:match("([^:]+):(.+)")
-                            if char_name then
-                                table.insert(needed_by, char_name)
+                if quest_item_name and char_list_str then
+                    -- Check for exact match
+                    local exact_match = (quest_item_name == item_name or quest_item_name:lower() == item_name:lower())
+                    
+                    -- Check for plural/singular variations
+                    local singular_match = false
+                    if not exact_match then
+                        -- Try removing trailing 's' from quest item name
+                        local quest_singular = quest_item_name:gsub("s$", "")
+                        if quest_singular ~= quest_item_name then
+                            singular_match = (quest_singular == item_name or quest_singular:lower() == item_name:lower())
+                        end
+                        
+                        -- Try removing trailing 's' from db item name if no match yet
+                        if not singular_match then
+                            local db_singular = item_name:gsub("s$", "")
+                            if db_singular ~= item_name then
+                                singular_match = (quest_item_name == db_singular or quest_item_name:lower() == db_singular:lower())
                             end
                         end
                     end
-                    break
+                    
+                    if exact_match or singular_match then
+                        -- Found matching quest item
+                        needed_by = {}
+                        -- Parse character:qty pairs from char_list_str
+                        for char_qty_pair in char_list_str:gmatch("([^,]+)") do
+                            local char_name, qty_str = char_qty_pair:match("^([^:]+):(.+)$")
+                            if char_name and qty_str then
+                                -- Only include characters who still need this item (qty > 0)
+                                local qty = tonumber(qty_str) or 0
+                                if qty > 0 then
+                                    table.insert(needed_by, char_name)
+                                end
+                            end
+                        end
+                        break
+                    end
                 end
             end
         end
@@ -208,39 +236,45 @@ function simulator.simulate_loot(item_name_or_id, is_id, force_quest)
     
     local candidates = {}
     
-    for i = 0, group_size do
-        local member = looting.get_valid_member(group_or_raid_tlo, i)
-        if member then
-            local member_name = member.CleanName()
-            Write.Info("\nTesting: %s", member_name)
-            
-            -- Use the main loot evaluation function which handles both quest and regular items
-            local can_loot, check_rematch, preference = looting.get_member_can_loot(
-                mock_item, 
-                mock_loot, 
-                save_slots, 
-                dannet_delay, 
-                always_loot, 
-                unmatched_item_rule
-            )
-            
-            if can_loot then
-                local reason = "Regular loot rules passed"
-                if needed_by and #needed_by > 0 then
-                    reason = "Needs for quest"
+    -- For quest items, candidates are those in the needed_by list
+    if needed_by and #needed_by > 0 then
+        for _, char_name in ipairs(needed_by) do
+            Write.Info("\nTesting: %s", char_name)
+            Write.Info("  ✓ CAN LOOT (Needs for quest)")
+            table.insert(candidates, {
+                name = char_name,
+                reason = "Needs for quest"
+            })
+        end
+    else
+        -- For regular items, check each member with get_member_can_loot
+        for i = 0, group_size do
+            local member = looting.get_valid_member(group_or_raid_tlo, i)
+            if member then
+                local member_name = member.CleanName()
+                Write.Info("\nTesting: %s", member_name)
+                
+                -- Use the main loot evaluation function which handles both quest and regular items
+                local can_loot, check_rematch, preference = looting.get_member_can_loot(
+                    mock_item, 
+                    mock_loot, 
+                    save_slots, 
+                    dannet_delay, 
+                    always_loot, 
+                    unmatched_item_rule
+                )
+                
+                if can_loot then
+                    local reason = "Regular loot rules passed"
+                    Write.Info("  ✓ CAN LOOT (%s)", reason)
+                    table.insert(candidates, {
+                        name = member_name,
+                        member = member,
+                        reason = reason
+                    })
+                else
+                    Write.Info("  ✗ CANNOT LOOT (Failed preference/inventory checks)")
                 end
-                Write.Info("  ✓ CAN LOOT (%s)", reason)
-                table.insert(candidates, {
-                    name = member_name,
-                    member = member,
-                    reason = reason
-                })
-            else
-                local reason = "Failed preference/inventory checks"
-                if needed_by and #needed_by > 0 then
-                    reason = "Doesn't need for quest"
-                end
-                Write.Info("  ✗ CANNOT LOOT (%s)", reason)
             end
         end
     end

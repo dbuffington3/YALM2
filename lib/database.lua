@@ -42,8 +42,6 @@ YALM2_Database.QueryDatabaseForItemId = function(item_id)
 	
 	local query = string.format("SELECT * FROM raw_item_data WHERE id = %d LIMIT 1", item_id)
 	debug_logger.debug("DATABASE: Query: %s", query)
-	print("DEBUG: Executing query: " .. query)
-	print("DEBUG: Database connection object: " .. tostring(YALM2_Database.database))
 	
 	local found = false
 	local row_count = 0
@@ -51,7 +49,6 @@ YALM2_Database.QueryDatabaseForItemId = function(item_id)
 	local success, err = pcall(function()
 		for row in YALM2_Database.database:nrows(query) do
 			row_count = row_count + 1
-			print("DEBUG: Got row #" .. row_count .. ": id=" .. tostring(row.id) .. ", name=" .. tostring(row.name))
 			item_db = row
 			found = true
 			debug_logger.debug("DATABASE: Found item id=%d, name=%s", row.id or 0, row.name or "nil")
@@ -59,19 +56,13 @@ YALM2_Database.QueryDatabaseForItemId = function(item_id)
 		end
 	end)
 	
-	print("DEBUG: pcall success: " .. tostring(success) .. ", error: " .. tostring(err))
-	print("DEBUG: Row count: " .. row_count)
-	print("DEBUG: Found: " .. tostring(found))
-	
 	if not success then
-		print("ERROR: Query failed: " .. tostring(err))
 		debug_logger.error("DATABASE: Query error: %s", tostring(err))
 		return nil
 	end
 	
 	if not found then
 		debug_logger.warn("DATABASE: Item id %d not found in raw_item_data", item_id)
-		print("DEBUG: Item id " .. tostring(item_id) .. " not found in raw_item_data")
 	end
 	
 	return item_db

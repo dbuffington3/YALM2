@@ -138,6 +138,13 @@ return {
 			["help"] = "Debug loot evaluation logic without requiring actual items",
 			["category"] = "Debug",
 		},
+		["TestComm"] = {
+			["args"] = "[set|read|monitor|quest] [variable] [seconds]",
+			["name"] = "TestComm",
+			["trigger"] = "testcomm",
+			["help"] = "Test MQ2 variable communication between scripts",
+			["category"] = "Debug",
+		},
 		["Tribute"] = {
 			["args"] = "[guild|me]",
 			["name"] = "Tribute",

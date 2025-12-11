@@ -9,6 +9,7 @@ local quest_interface = require("yalm2.core.quest_interface")
 local dannet = require("yalm2.lib.dannet")
 local utils = require("yalm2.lib.utils")
 local debug_logger = require("yalm2.lib.debug_logger")
+local quest_db = require("yalm2.lib.quest_database")
 require("yalm2.lib.database")  -- Initialize the global Database table
 
 local looting = {}
@@ -100,6 +101,13 @@ looting.give_item = function(member, item_name)
 	Write.Error("  Current inventory: %d, After: %d", current_qty, current_qty + 1)
 	
 	mq.cmdf("/advloot shared 1 giveto %s 1", character_name)
+	
+	-- Update the quest database to reflect this character received an item
+	-- This way the next refresh won't ask for the same item again
+	if item_name and quest_interface.is_quest_item(item_name) then
+		quest_db.update_character_item_status(character_name, item_name, "completed")
+		debug_logger.quest("QUEST_DB: Updated %s's %s status to completed in database", character_name, item_name)
+	end
 	
 	-- If this was a quest item, refresh the recipient's task data and update quest globals
 	if item_name and quest_interface.is_quest_item(item_name) then
