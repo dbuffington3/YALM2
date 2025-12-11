@@ -332,9 +332,19 @@ evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_ite
 			local is_quest_item = (loot_item.item_db.questitem == 1)
 			debug_logger.info("LOOT: Quest Item Detection: %s (questitem=%s)", tostring(is_quest_item), tostring(loot_item.item_db.questitem))
 			
-			-- EARLY BAILOUT: If quest item is valuable, treat as regular loot
-			-- If price > 1pp (100000 copper) and stacks to 1000+, skip quest system
+			-- EARLY BAILOUT: If quest item is used for tradeskills, ALWAYS keep it
+			-- Tradeskill materials are too valuable to ignore
 			if is_quest_item then
+				local is_tradeskill = (loot_item.item_db.tradeskills == 1)
+				
+				if is_tradeskill then
+					debug_logger.info("LOOT: Quest item is tradeskill material (tradeskills=1) - KEEPING regardless of quest need")
+					debug_logger.info("=== LOOT ANALYSIS END: TRADESKILL MATERIAL ===")
+					return { setting = "Keep" }
+				end
+				
+				-- If not tradeskill, check if it's valuable
+				-- If price > 1pp (100000 copper) and stacks to 1000+, treat as regular loot
 				local item_price = loot_item.item_db.price or 0
 				local item_stacksize = loot_item.item_db.stacksize or 0
 				
@@ -373,7 +383,7 @@ evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_ite
 					return { setting = "Ignore" }
 				end
 			elseif not is_quest_item then
-				debug_logger.info("LOOT: Not a quest item (questitem=0 or valuable quest item) - skipping quest system, using normal loot rules")
+				debug_logger.info("LOOT: Not a quest item (questitem=0 or valuable/handled quest item) - skipping quest system, using normal loot rules")
 			end
 		else
 			debug_logger.warn("LOOT: No database information available for item")
