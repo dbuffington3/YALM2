@@ -88,6 +88,7 @@ Basic commands:
 - EverQuest with MQ2 (MacroQuest2)
 - Advanced Loot enabled
 - DanNet for multi-character coordination
+- I personally run lootly on the characters that are not the master looter so they just accept what I pass out.  You could run YALM or really anything else that will accept the loot I suppose, but lootly is simple and low overhead.  
 
 ## Project Status
 
