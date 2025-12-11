@@ -357,28 +357,10 @@ evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_ite
 				else
 					debug_logger.info("QUEST: No characters need this item for quests")
 					if is_quest_item then
-						-- Before ignoring, check if there's a saved preference for this item
-						local saved_preference = nil
-						
-						-- Check character-specific item settings first
-						if char_settings[configuration.types.item.settings_key] then
-							saved_preference = evaluate.check_loot_items(loot_item, loot.helpers, char_settings[configuration.types.item.settings_key])
-						end
-						
-						-- Check global item settings if no character-specific preference
-						if saved_preference == nil and loot.items then
-							saved_preference = evaluate.check_loot_items(loot_item, loot.helpers, loot.items)
-						end
-						
-						-- If a saved preference exists, use it
-						if saved_preference then
-							debug_logger.info("QUEST: Using saved preference for unwanted quest item: %s", tostring(saved_preference.setting or saved_preference))
-							debug_logger.info("=== LOOT ANALYSIS END: QUEST WITH SAVED PREF ===")
-							return saved_preference
-						end
-						
-						-- No saved preference - ignore this unwanted quest item
-						debug_logger.info("QUEST: Quest item not needed and no saved preference - returning Ignore")
+						-- Quest item is not needed right now, but don't let saved preferences block it
+						-- We want future quests to be able to pick it up
+						-- Simply ignore it for now - saved preferences are for non-quest items only
+						debug_logger.info("QUEST: Quest item not needed by anyone - ignoring (will be available for future quests)")
 						debug_logger.info("=== LOOT ANALYSIS END: QUEST IGNORE ===")
 						return { setting = "Ignore" }
 					end
