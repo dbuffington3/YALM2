@@ -395,6 +395,7 @@ looting.handle_master_looting = function(global_settings)
 				if #valid_recipients > 0 then
 					-- Give to first valid recipient who needs it
 					local recipient = valid_recipients[1]
+					Write.Info("QUEST DISTRIBUTION: Giving %s to %s (needs quest item)", item_name, recipient.Name())
 					debug_logger.info("QUEST_DISTRIBUTION: Giving %s to %s", item_name, recipient.Name())
 					looting.give_item(recipient, item_name)
 					mq.delay(global_settings.settings.distribute_delay)

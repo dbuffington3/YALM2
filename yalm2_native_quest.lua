@@ -1069,11 +1069,7 @@ local function manual_refresh_with_messages(show_messages)
                 print(string.format("%s Manual refresh - %s: %d characters", taskheader_plain, item_name, #char_list))
             end
             
-            if quest_data_string:len() > 100 then
-                print(string.format("%s Manual refresh data: %s...", taskheader_plain, quest_data_string:sub(1, 100)))
-            elseif quest_data_string:len() > 0 then
-                print(string.format("%s Manual refresh data: %s", taskheader_plain, quest_data_string))
-            end
+            -- Skip detailed data output - kept in debug logs if needed
         else
             print(string.format("%s Manual refresh: No quest items found", taskheader_plain))
         end
