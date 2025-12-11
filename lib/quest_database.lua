@@ -309,6 +309,28 @@ function quest_db.store_quest_items_from_refresh(quest_items)
     -- Start transaction for efficiency
     db:exec("BEGIN TRANSACTION")
     
+    -- MERGE STRATEGY: Only update entries for items currently in active tasks
+    -- Keep "Done" entries - they're no longer needed but shouldn't be overwritten
+    
+    -- First, collect all item names from the current refresh
+    local current_items = {}
+    for item_name, _ in pairs(quest_items) do
+        current_items[item_name] = true
+    end
+    
+    -- Delete only rows for items that are actively being tracked NOW
+    -- This preserves "Done" entries for items not in current tasks
+    for item_name, _ in pairs(current_items) do
+        local delete_sql = "DELETE FROM quest_tasks WHERE item_name = ? AND status != 'Done'"
+        local stmt = db:prepare(delete_sql)
+        if stmt then
+            stmt:bind_values(item_name)
+            stmt:step()
+            stmt:finalize()
+        end
+    end
+    
+    -- Now insert the fresh data for active items
     local insert_sql = [[
         INSERT OR REPLACE INTO quest_tasks (character, task_name, objective, status, item_name, updated_at)
         VALUES (?, ?, ?, ?, ?, ?)
@@ -339,7 +361,7 @@ function quest_db.store_quest_items_from_refresh(quest_items)
     db:exec("COMMIT")
     db:close()
     
-    Write.Info("[QuestDB] Stored %d quest item records from refresh", insert_count)
+    Write.Info("[QuestDB] Stored %d quest item records from refresh (kept Done entries)", insert_count)
     return true
 end
 
