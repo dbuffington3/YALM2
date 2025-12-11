@@ -328,8 +328,9 @@ evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_ite
 			debug_logger.info("LOOT: NoDrop flag: %s", tostring(loot_item.item_db.nodrop)) 
 			debug_logger.info("LOOT: QuestItem flag: %s", tostring(loot_item.item_db.questitemflag))
 			
-			local is_quest_item = (loot_item.item_db.norent == 1)
-			debug_logger.info("LOOT: Quest Item Detection: %s (NoRent=%s)", tostring(is_quest_item), tostring(loot_item.item_db.norent))
+			-- Check if this is a quest item using the questitem column
+			local is_quest_item = (loot_item.item_db.questitem == 1)
+			debug_logger.info("LOOT: Quest Item Detection: %s (questitem=%s)", tostring(is_quest_item), tostring(loot_item.item_db.questitem))
 			
 			-- QUEST SYSTEM CHECK - Use local parsing like the simulator does
 			if quest_interface and quest_interface.get_quest_characters_local then
