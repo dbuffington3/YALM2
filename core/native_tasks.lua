@@ -312,6 +312,12 @@ function native_tasks.get_characters_needing_item(item_name)
     -- Fallback to in-memory data if database is empty
     if #characters_needing == 0 then
         Write.Debug("[NativeQuest] No results from database, trying in-memory fallback")
+        Write.Debug("[GLOBAL CHECK] _G.YALM2_QUEST_DATA exists: %s", tostring(_G.YALM2_QUEST_DATA ~= nil))
+        if _G.YALM2_QUEST_DATA and _G.YALM2_QUEST_DATA.quest_items then
+            Write.Debug("[GLOBAL CHECK] _G.YALM2_QUEST_DATA.quest_items already populated")
+        else
+            Write.Debug("[GLOBAL CHECK] _G.YALM2_QUEST_DATA.quest_items NOT populated, would wait here")
+        end
         
         if not _G.YALM2_QUEST_DATA or not _G.YALM2_QUEST_DATA.quest_items then
             Write.Debug("[NativeQuest] YALM2_QUEST_DATA not populated yet, calling get_all_quest_items()")
@@ -325,6 +331,7 @@ function native_tasks.get_characters_needing_item(item_name)
             quest_data = _G.YALM2_QUEST_DATA
             wait_count = wait_count + 1
         end
+        Write.Debug("[GLOBAL CHECK] Completed wait loop after %d iterations for _G.YALM2_QUEST_DATA", wait_count)
         
         if quest_data and quest_data.quest_items then
             Write.Debug("[NativeQuest] Using in-memory YALM2_QUEST_DATA with %d characters", quest_data.character_count or 0)

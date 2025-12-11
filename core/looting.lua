@@ -67,6 +67,7 @@ looting.give_item = function(member, item_name)
 	
 	-- Try to show current inventory quantity from quest data
 	local quest_data_with_qty = _G.YALM2_QUEST_ITEMS_WITH_QTY or ""
+	Write.Debug("[GLOBAL CHECK] _G.YALM2_QUEST_ITEMS_WITH_QTY in looting.lua line 69: %s (len=%d)", tostring(quest_data_with_qty), quest_data_with_qty:len())
 	local current_qty = 0
 	if quest_data_with_qty:len() > 0 and item_name then
 		-- Parse format: "Item:char1:qty1,char2:qty2|Item2:..."
@@ -257,6 +258,7 @@ looting.get_member_can_loot = function(item, loot, save_slots, dannet_delay, alw
 		-- Parse quantities from quest data
 		local item_quantities = {}
 		local quest_data_with_qty = _G.YALM2_QUEST_ITEMS_WITH_QTY or ""
+		Write.Debug("[GLOBAL CHECK] _G.YALM2_QUEST_ITEMS_WITH_QTY in looting.lua line 259: %s (len=%d)", tostring(quest_data_with_qty), quest_data_with_qty:len())
 		
 		if quest_data_with_qty:len() > 0 then
 			for item_data in quest_data_with_qty:gmatch("([^|]+)") do

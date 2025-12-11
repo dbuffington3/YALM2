@@ -170,11 +170,13 @@ function simulator.simulate_loot(item_name_or_id, is_id, force_quest)
     local needed_by = nil
     Write.Error("[QUEST CHECK] Starting quest detection. force_quest=%s, global var=%s", tostring(force_quest), tostring(_G.YALM2_QUEST_ITEMS_WITH_QTY ~= nil))
     Write.Debug("DEBUG: force_quest=%s, YALM2_QUEST_ITEMS_WITH_QTY=%s", tostring(force_quest), tostring(_G.YALM2_QUEST_ITEMS_WITH_QTY))
+    Write.Debug("[GLOBAL CHECK] _G.YALM2_QUEST_ITEMS_WITH_QTY in loot_simulator.lua line 174: %s (len=%d)", tostring(_G.YALM2_QUEST_ITEMS_WITH_QTY or ""), (_G.YALM2_QUEST_ITEMS_WITH_QTY or ""):len())
     
     if force_quest or _G.YALM2_QUEST_ITEMS_WITH_QTY then
         Write.Error("[QUEST BLOCK] Entering quest detection block")
         -- Parse quest data to check if this item is needed
         local quest_data = _G.YALM2_QUEST_ITEMS_WITH_QTY or ""
+        Write.Debug("[GLOBAL CHECK] Using _G.YALM2_QUEST_ITEMS_WITH_QTY in loot_simulator.lua line 177 (len=%d)", quest_data:len())
         if quest_data:len() > 0 then
             for item_data in quest_data:gmatch("([^|]+)") do
                 -- Parse: "ItemName:char1:qty1,char2:qty2"
