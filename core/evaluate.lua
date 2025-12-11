@@ -333,24 +333,28 @@ evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_ite
 			debug_logger.info("LOOT: Quest Item Detection: %s (questitem=%s)", tostring(is_quest_item), tostring(loot_item.item_db.questitem))
 			
 			-- EARLY BAILOUT: If quest item is used for tradeskills, ALWAYS keep it
-			-- Tradeskill materials are too valuable to ignore
+			-- Tradeskill materials are too valuable to ignore (configurable via keep_tradeskills setting)
 			if is_quest_item then
+				local keep_tradeskills = (loot and loot.settings and loot.settings.keep_tradeskills ~= false)
 				local is_tradeskill = (loot_item.item_db.tradeskills == 1)
 				
-				if is_tradeskill then
+				if keep_tradeskills and is_tradeskill then
 					debug_logger.info("LOOT: Quest item is tradeskill material (tradeskills=1) - KEEPING regardless of quest need")
 					debug_logger.info("=== LOOT ANALYSIS END: TRADESKILL MATERIAL ===")
 					return { setting = "Keep" }
 				end
 				
-				-- If not tradeskill, check if it's valuable
-				-- If price > 1pp (100000 copper) and stacks to 1000+, treat as regular loot
+				-- If not tradeskill (or tradeskills disabled), check if it's valuable
+				-- If price >= configured min AND stacks >= configured min, treat as regular loot
+				local valuable_min_price = (loot and loot.settings and loot.settings.valuable_item_min_price or 100000)
+				local valuable_min_stack = (loot and loot.settings and loot.settings.valuable_item_min_stack or 1000)
+				
 				local item_price = loot_item.item_db.price or 0
 				local item_stacksize = loot_item.item_db.stacksize or 0
 				
-				if item_price > 100000 and item_stacksize >= 1000 then
-					debug_logger.info("LOOT: Quest item has high value (price=%d, stacksize=%d) - treating as regular loot", 
-						item_price, item_stacksize)
+				if item_price >= valuable_min_price and item_stacksize >= valuable_min_stack then
+					debug_logger.info("LOOT: Quest item has high value (price=%d >= %d, stacksize=%d >= %d) - treating as regular loot", 
+						item_price, valuable_min_price, item_stacksize, valuable_min_stack)
 					is_quest_item = false  -- Treat as regular loot, not quest item
 					debug_logger.info("LOOT: Skipping quest system for valuable quest item, using normal loot rules")
 				end

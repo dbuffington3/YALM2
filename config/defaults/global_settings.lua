@@ -409,6 +409,7 @@ return {
 		["distribute_delay"] = "1s",
 		["do_raid_loot"] = true,
 		["frequency"] = 250,
+		["keep_tradeskills"] = true,
 		["log_level"] = "info",
 		["save_slots"] = 3,
 		["unmatched_item_delay"] = "10s",
@@ -416,6 +417,8 @@ return {
 			["setting"] = "Keep",
 		},
 		["use_native_quest_system"] = false,
+		["valuable_item_min_price"] = 100000,
+		["valuable_item_min_stack"] = 1000,
 	},
 	["subcommands"] = {
 		["Add"] = {
