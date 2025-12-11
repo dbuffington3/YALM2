@@ -62,9 +62,6 @@ looting.give_item = function(member, item_name)
 	local character_name = member.Name()
 	debug_logger.info("LOOT_DISTRIBUTE: Giving %s to %s", item_name or "item", character_name)
 	
-	-- Log detailed distribution info
-	Write.Error("*** QUEST DISTRIBUTION: %s → %s", item_name or "item", character_name)
-	
 	-- Distribute the item via advloot
 	mq.cmdf("/advloot shared 1 giveto %s 1", character_name)
 	
@@ -398,7 +395,6 @@ looting.handle_master_looting = function(global_settings)
 				if #valid_recipients > 0 then
 					-- Give to first valid recipient who needs it
 					local recipient = valid_recipients[1]
-					Write.Info("QUEST DISTRIBUTION: Giving %s to %s (needs quest item)", item_name, recipient.Name())
 					debug_logger.info("QUEST_DISTRIBUTION: Giving %s to %s", item_name, recipient.Name())
 					looting.give_item(recipient, item_name)
 					mq.delay(global_settings.settings.distribute_delay)
