@@ -202,23 +202,29 @@ looting.get_member_can_loot = function(item, loot, save_slots, dannet_delay, alw
 	local item_name = item and item.Name() or "unknown"
 	debug_logger.info("LOOT_CHECK: Processing item: %s", item_name)
 	
-	-- Check if anyone needs this item for a quest
-	local needed_by = quest_interface.get_characters_needing_item(item_name)
+	-- Check if this is a quest item
+	local is_quest_item = quest_interface.is_quest_item(item_name)
 	
-	if needed_by and #needed_by > 0 then
-		debug_logger.info("QUEST_ITEM: %s is needed for quests by [%s]", item_name, table.concat(needed_by, ", "))
-		Write.Info("Quest item detected: %s - using quest distribution logic", item_name)
-		
-		-- Quest data is now retrieved from the database via quest_interface.get_characters_needing_item()
-		-- No need to parse global variables since they're not being populated
-		-- Just distribute to the first character who needs it
+	if is_quest_item then
+		-- Check if anyone needs this item for a quest
+		local needed_by = quest_interface.get_characters_needing_item(item_name)
 		
 		if needed_by and #needed_by > 0 then
+			debug_logger.info("QUEST_ITEM: %s is needed for quests by [%s]", item_name, table.concat(needed_by, ", "))
+			Write.Info("Quest item detected: %s - using quest distribution logic", item_name)
+			
+			-- Distribute to the first character who needs it
 			local recipient = mq.TLO.Group.Member(needed_by[1])
 			if recipient then
 				looting.give_item(recipient, item_name)
 			end
+		else
+			-- Quest item but not needed by anyone - skip it immediately
+			debug_logger.info("QUEST_ITEM: %s is a quest item but not needed by anyone - leaving on corpse", item_name)
+			Write.Info("Quest item %s not needed - leaving on corpse", item_name)
+			looting.leave_item()
 		end
+		return
 	end
 	
 	-- NOT A QUEST ITEM: Continue with normal preference-based loot evaluation
