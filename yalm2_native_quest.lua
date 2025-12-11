@@ -297,33 +297,6 @@ local actor = actors.register(function(message)
                 triggers.do_refresh = true
             end
             
-        elseif message.content.id == 'QUEST_ITEM_GIVEN' then
-            -- Update quest table for a specific character without full refresh
-            -- Broadcast format: QUEST_ITEM_GIVEN|character_name|item_name|new_status
-            local content_str = tostring(message.content) or ""
-            local parts = {}
-            for part in content_str:gmatch("[^|]+") do
-                table.insert(parts, part)
-            end
-            
-            if #parts >= 4 and parts[1] == "QUEST_ITEM_GIVEN" then
-                local character_name = parts[2]
-                local item_name = parts[3]
-                local new_status = parts[4]
-                
-                -- Update the task in our local data
-                if task_data.tasks[character_name] then
-                    for _, task in ipairs(task_data.tasks[character_name]) do
-                        for _, objective in ipairs(task.objectives) do
-                            -- Try to find the objective containing this item name
-                            if objective.objective and objective.objective:find(item_name, 1, true) then
-                                objective.status = new_status
-                            end
-                        end
-                    end
-                end
-            end
-            
         elseif message.content.id == 'END_SCRIPT' then
             running = false
         end

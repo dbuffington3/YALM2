@@ -370,17 +370,17 @@ end
 --- Parses status like "0/2" → "1/2", and "2/2" → "Done"
 --- @param character_name string - Character name
 --- @param item_name string - Item that was given
---- @return table - {success: boolean, status: string} - Success flag and new status value
+--- @return boolean - Success
 function quest_db.increment_quantity_received(character_name, item_name)
     if not character_name or not item_name then
         Write.Error("[QuestDB] Invalid input to increment_quantity_received")
-        return { success = false, status = nil }
+        return false
     end
     
     local db = sql.open(db_path)
     if not db then
         Write.Error("[QuestDB] Failed to open database")
-        return { success = false, status = nil }
+        return false
     end
     
     -- First, get the current status
@@ -393,7 +393,7 @@ function quest_db.increment_quantity_received(character_name, item_name)
     local stmt = db:prepare(query)
     if not stmt then
         db:close()
-        return { success = false, status = nil }
+        return false
     end
     
     stmt:bind_values(character_name, item_name)
@@ -410,7 +410,7 @@ function quest_db.increment_quantity_received(character_name, item_name)
         -- If status doesn't match the pattern, can't increment
         Write.Error("[QuestDB] Cannot parse status for %s: %s", item_name, current_status)
         db:close()
-        return { success = false, status = nil }
+        return false
     end
     
     received = tonumber(received)
@@ -443,11 +443,8 @@ function quest_db.increment_quantity_received(character_name, item_name)
     
     db:close()
     
-    -- Return table with success and new status so caller can notify UI
-    return {
-        success = true,
-        status = new_status
-    }
+    -- Silent update - no spam messages
+    return true
 end
 
 return quest_db
