@@ -1079,15 +1079,18 @@ local function manual_refresh_with_messages(show_messages)
         item_count = item_count + 1
     end
     
-    -- Store quest items in the database for persistence across sessions
-    if not quest_db.init() then
-        Write.Error("Failed to initialize quest database during refresh")
-    else
-        -- Write the quest items to the database using the new refresh function
-        if quest_db.store_quest_items_from_refresh(quest_items) then
-            Write.Debug("[MANUAL_REFRESH] Stored %d quest items in database for %d characters", item_count, #peer_list)
+    -- Only write to database during manual refresh (user-initiated)
+    -- Automatic refreshes rely on loot distribution to update DB via increment_quantity_received()
+    if show_messages then
+        if not quest_db.init() then
+            Write.Error("Failed to initialize quest database during refresh")
         else
-            Write.Error("[MANUAL_REFRESH] Failed to store quest items in database")
+            -- Write the quest items to the database using the new refresh function
+            if quest_db.store_quest_items_from_refresh(quest_items) then
+                Write.Debug("[MANUAL_REFRESH] Stored %d quest items in database for %d characters", item_count, #peer_list)
+            else
+                Write.Error("[MANUAL_REFRESH] Failed to store quest items in database")
+            end
         end
     end
     

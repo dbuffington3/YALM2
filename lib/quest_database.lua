@@ -343,6 +343,88 @@ function quest_db.store_quest_items_from_refresh(quest_items)
     return true
 end
 
+--- Increment the quantity received for a character's quest item
+--- Called by ML immediately after distributing loot
+--- Parses status like "0/2" → "1/2", and "2/2" → "Done"
+--- @param character_name string - Character name
+--- @param item_name string - Item that was given
+--- @return boolean - Success
+function quest_db.increment_quantity_received(character_name, item_name)
+    if not character_name or not item_name then
+        Write.Error("[QuestDB] Invalid input to increment_quantity_received")
+        return false
+    end
+    
+    local db = sql.open(db_path)
+    if not db then
+        Write.Error("[QuestDB] Failed to open database")
+        return false
+    end
+    
+    -- First, get the current status
+    local query = [[
+        SELECT status FROM quest_tasks
+        WHERE character = ? AND item_name = ?
+        LIMIT 1
+    ]]
+    
+    local stmt = db:prepare(query)
+    if not stmt then
+        db:close()
+        return false
+    end
+    
+    stmt:bind_values(character_name, item_name)
+    local current_status = ""
+    if stmt:step() == sql.ROW then
+        current_status = stmt:get_value(0) or ""
+    end
+    stmt:finalize()
+    
+    -- Parse the status string (e.g., "0/2" or "1/3")
+    local received, needed = current_status:match("(%d+)/(%d+)")
+    
+    if not received or not needed then
+        -- If status doesn't match the pattern, can't increment
+        Write.Error("[QuestDB] Cannot parse status for %s: %s", item_name, current_status)
+        db:close()
+        return false
+    end
+    
+    received = tonumber(received)
+    needed = tonumber(needed)
+    
+    -- Increment received count
+    received = received + 1
+    
+    -- Determine new status
+    local new_status
+    if received >= needed then
+        new_status = "Done"
+    else
+        new_status = string.format("%d/%d", received, needed)
+    end
+    
+    -- Update the database
+    local update_sql = [[
+        UPDATE quest_tasks
+        SET status = ?, updated_at = ?
+        WHERE character = ? AND item_name = ?
+    ]]
+    
+    stmt = db:prepare(update_sql)
+    if stmt then
+        stmt:bind_values(new_status, mq.gettime(), character_name, item_name)
+        stmt:step()
+        stmt:finalize()
+    end
+    
+    db:close()
+    
+    -- Silent update - no spam messages
+    return true
+end
+
 return quest_db
     
 

@@ -103,10 +103,11 @@ looting.give_item = function(member, item_name)
 	mq.cmdf("/advloot shared 1 giveto %s 1", character_name)
 	
 	-- Update the quest database to reflect this character received an item
-	-- This way the next refresh won't ask for the same item again
+	-- Increment their quest progress immediately (e.g., 0/2 → 1/2)
+	-- This way the ML knows the distribution state without waiting for refresh
 	if item_name and quest_interface.is_quest_item(item_name) then
-		quest_db.update_character_item_status(character_name, item_name, "completed")
-		debug_logger.quest("QUEST_DB: Updated %s's %s status to completed in database", character_name, item_name)
+		quest_db.increment_quantity_received(character_name, item_name)
+		debug_logger.quest("QUEST_DB: Incremented %s's %s status in database", character_name, item_name)
 	end
 	
 	-- If this was a quest item, refresh the recipient's task data and update quest globals

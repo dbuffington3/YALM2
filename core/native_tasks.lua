@@ -74,7 +74,7 @@ function native_tasks.shutdown()
     last_data_update = 0
 end
 
---- Refresh all character quest data
+--- Refresh all character quest data (automatic/silent refresh)
 function native_tasks.refresh_all_characters()
     if not system_active then
         Write.Warn("[NativeQuest] Native quest system not active")
@@ -82,9 +82,9 @@ function native_tasks.refresh_all_characters()
     end
     
     Write.Debug("[NativeQuest] Refreshing quest data from all characters...")
-    -- Send refresh command to coordinator (with error handling)
+    -- Send silent refresh command to coordinator (with error handling)
     local success = pcall(function()
-        mq.cmd('/yalm2quest refresh')
+        mq.cmd('/yalm2quest refresh silent')
     end)
     if not success then
         Write.Warn("[NativeQuest] Coordinator not ready yet - command failed")
@@ -403,10 +403,10 @@ function native_tasks.process()
     end
 end
 
---- Force immediate task collection
+--- Force immediate task collection (automatic/silent)
 function native_tasks.collect_my_tasks()
     if system_active then
-        mq.cmd('/yalm2quest refresh')
+        mq.cmd('/yalm2quest refresh silent')
     end
 end
 
