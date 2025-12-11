@@ -445,51 +445,36 @@ looting.handle_master_looting = function(global_settings)
 		tostring(is_quest_item))
 	
 	if is_quest_item then
-		Write.Error("*** MASTER LOOT DEBUG: First get_member_can_loot result - can_loot: %s, preference: %s, member: %s ***", 
+		debug_logger.debug("Quest item loot check - can_loot: %s, preference: %s, member: %s", 
 			tostring(can_loot), preference and preference.setting or "nil", member and member.CleanName() or "nil")
 		
 		-- Debug quest preference details
 		if preference then
-			Write.Error("*** QUEST PREF DEBUG: list=[%s], data=%s ***", 
+			debug_logger.debug("Quest preference - list=[%s], data=%s", 
 				preference.list and table.concat(preference.list, ", ") or "empty/nil",
 				preference.data and "exists" or "nil"
 			)
 			if preference.data then
-				Write.Error("*** QUEST DATA DEBUG: quest_item=%s, task_name='%s' ***",
+				debug_logger.debug("Quest data - quest_item=%s, task_name='%s'",
 					tostring(preference.data.quest_item),
 					preference.data.task_name or "nil"
 				)
 			end
 			
-			-- DEBUG: Test group member check manually for Vexxuss
-			if member and member.CleanName() == "Vexxuss" and preference.list then
-				Write.Error("*** MANUAL GROUP CHECK: Testing Vexxuss against list [%s] ***", 
-					table.concat(preference.list, ", ")
-				)
-				
-				-- Check if Vexxuss is in the list
-				local vexxuss_in_list = false
-				for _, name in ipairs(preference.list) do
-					if name:lower() == "vexxuss" then
-						vexxuss_in_list = true
-						break
-					end
-				end
-				Write.Error("*** MANUAL GROUP CHECK: Vexxuss in list: %s ***", tostring(vexxuss_in_list))
-			end
+			-- Vexxuss group member check disabled
 		end
 		
 		-- DIRECT TEST: Check if quest logic is accessible
 		if quest_interface and quest_interface.get_characters_needing_item then
 			local needed_by, task_name, objective = quest_interface.get_characters_needing_item("Blighted Blood Sample")
-			Write.Error("*** DIRECT QUEST TEST: needed_by=[%s], task_name='%s' ***", 
+			debug_logger.debug("Quest characters check - needed_by=[%s], task_name='%s'", 
 				needed_by and table.concat(needed_by, ", ") or "nil",
 				task_name or "nil"
 			)
 			
 			-- HOTFIX: Manually override preference for quest items ONLY
 			if needed_by and #needed_by > 0 then
-				Write.Error("*** QUEST HOTFIX: Overriding preference with quest characters for %s ***", item_name)
+				debug_logger.debug("Overriding preference with quest characters for %s", item_name)
 				
 				-- Find valid group members who need this item
 				local group_or_raid_tlo = mq.TLO.Raid.Members() > 0 and "Raid" or "Group"
@@ -590,7 +575,7 @@ looting.handle_master_looting = function(global_settings)
 				end
 			end
 		else
-			Write.Error("*** DIRECT QUEST TEST: tasks module or function not available ***")
+			debug_logger.debug("Quest interface not available for quest check")
 		end
 	end
 

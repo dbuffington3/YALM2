@@ -8,29 +8,16 @@ local utils = require("yalm2.lib.utils")
 local inventory = {}
 
 inventory.check_group_member = function(member, list, dannet_delay, always_loot)
-	-- Debug for quest items
+	-- Debug for quest items disabled
 	local member_name = member and member.Name() or "unknown"
-	if member_name == "Vexxuss" then
-		Write.Error("*** GROUP MEMBER CHECK: member=%s, always_loot=%s, list=[%s] ***", 
-			member_name,
-			tostring(always_loot),
-			list and table.concat(list, ", ") or "nil"
-		)
-	end
 	
 	if always_loot then
-		if member_name == "Vexxuss" then
-			Write.Error("*** GROUP MEMBER CHECK: PASSED due to always_loot=true ***")
-		end
 		return true
 	end
 
 	local class
 
 	if not list or #list == 0 then
-		if member_name == "Vexxuss" then
-			Write.Error("*** GROUP MEMBER CHECK: PASSED due to empty/nil list ***")
-		end
 		return true
 	end
 

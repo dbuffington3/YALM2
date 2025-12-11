@@ -178,7 +178,6 @@ end
 
 --- Check if an item is needed for any character's quests
 function native_tasks.is_item_needed_for_quest(item_name)
-    Write.Info("[NativeQuest] DEBUG: is_item_needed_for_quest called for: " .. item_name)
     Write.Debug("[NativeQuest] Checking if item is needed for quest: " .. item_name)
     
     -- Use live MQ2 variable reading like get_characters_needing_item does
@@ -238,7 +237,6 @@ end
 
 --- Alias for quest_interface compatibility
 function native_tasks.is_quest_item(item_name)
-    Write.Info("[NativeQuest] DEBUG: is_quest_item alias called for: " .. item_name)
     return native_tasks.is_item_needed_for_quest(item_name)
 end
 
