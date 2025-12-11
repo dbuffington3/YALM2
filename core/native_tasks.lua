@@ -309,59 +309,8 @@ function native_tasks.get_characters_needing_item(item_name)
         Write.Error("[NativeQuest] Failed to initialize database")
     end
     
-    -- Fallback to in-memory data if database is empty
-    if #characters_needing == 0 then
-        Write.Info("[NativeQuest] No results from database, trying in-memory fallback")
-        Write.Info("[GLOBAL CHECK] _G.YALM2_QUEST_DATA exists: %s", tostring(_G.YALM2_QUEST_DATA ~= nil))
-        if _G.YALM2_QUEST_DATA and _G.YALM2_QUEST_DATA.quest_items then
-            Write.Info("[GLOBAL CHECK] _G.YALM2_QUEST_DATA.quest_items already populated")
-        else
-            Write.Info("[GLOBAL CHECK] _G.YALM2_QUEST_DATA.quest_items NOT populated, would wait here")
-        end
-        
-        if not _G.YALM2_QUEST_DATA or not _G.YALM2_QUEST_DATA.quest_items then
-            Write.Debug("[NativeQuest] YALM2_QUEST_DATA not populated yet, calling get_all_quest_items()")
-            native_tasks.get_all_quest_items()
-        end
-        
-        local quest_data = _G.YALM2_QUEST_DATA
-        local wait_count = 0
-        while (not quest_data or not quest_data.quest_items) and wait_count < 50 do
-            mq.delay(100)
-            quest_data = _G.YALM2_QUEST_DATA
-            wait_count = wait_count + 1
-        end
-        Write.Info("[GLOBAL CHECK] Completed wait loop after %d iterations for _G.YALM2_QUEST_DATA", wait_count)
-        
-        if quest_data and quest_data.quest_items then
-            Write.Debug("[NativeQuest] Using in-memory YALM2_QUEST_DATA with %d characters", quest_data.character_count or 0)
-            
-            -- Same matching logic as database
-            if quest_data.quest_items[item_name] then
-                for _, char_info in ipairs(quest_data.quest_items[item_name]) do
-                    table.insert(characters_needing, char_info.character)
-                    task_name = task_name or char_info.task_name
-                    objective = objective or char_info.objective
-                end
-            else
-                -- Check plural/singular and partial matches in in-memory data
-                for quest_item_name, char_list in pairs(quest_data.quest_items) do
-                    local item_singular = item_name:gsub("s$", "")
-                    local quest_singular = quest_item_name:gsub("s$", "")
-                    
-                    if (item_singular ~= item_name or quest_singular ~= quest_item_name) and
-                       item_singular:lower() == quest_singular:lower() then
-                        for _, char_info in ipairs(char_list) do
-                            table.insert(characters_needing, char_info.character)
-                            task_name = task_name or char_info.task_name
-                            objective = objective or char_info.objective
-                        end
-                        break
-                    end
-                end
-            end
-        end
-    end
+    -- Quest data comes from the database, no need to wait for globals
+    -- If database returned no results, the item simply isn't needed
     
     Write.Debug("[NativeQuest] Final result for '%s': found %d characters", item_name, #characters_needing)
     return characters_needing, task_name, objective

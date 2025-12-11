@@ -65,42 +65,7 @@ looting.give_item = function(member, item_name)
 	-- Log detailed distribution info
 	Write.Error("*** QUEST DISTRIBUTION: %s → %s", item_name or "item", character_name)
 	
-	-- Try to show current inventory quantity from quest data
-	local quest_data_with_qty = _G.YALM2_QUEST_ITEMS_WITH_QTY or ""
-	Write.Info("[GLOBAL CHECK] _G.YALM2_QUEST_ITEMS_WITH_QTY in looting.lua line 69: %s (len=%d)", tostring(quest_data_with_qty), quest_data_with_qty:len())
-	local current_qty = 0
-	if quest_data_with_qty:len() > 0 and item_name then
-		-- Parse format: "Item:char1:qty1,char2:qty2|Item2:..."
-		for item_data in quest_data_with_qty:gmatch("([^|]+)") do
-			local parts = {}
-			for part in item_data:gmatch("([^:]+)") do
-				table.insert(parts, part)
-			end
-			
-			if parts[1] then
-				local detected_item = parts[1]
-				-- Check if this is the item we're looting
-				if detected_item:lower() == item_name:lower() or 
-				   detected_item:gsub("s$", ""):lower() == item_name:gsub("s$", ""):lower() then
-					-- Found matching item, parse character quantities
-					if #parts > 1 then
-						for i = 2, #parts do
-							local char_qty_pair = parts[i]
-							local char_name_in_data, qty_str = char_qty_pair:match("([^:]+):(.+)")
-							if char_name_in_data and char_name_in_data:lower() == character_name:lower() then
-								current_qty = tonumber(qty_str) or 0
-								break
-							end
-						end
-					end
-					break
-				end
-			end
-		end
-	end
-	
-	Write.Error("  Current inventory: %d, After: %d", current_qty, current_qty + 1)
-	
+	-- Distribute the item via advloot
 	mq.cmdf("/advloot shared 1 giveto %s 1", character_name)
 	
 	-- Update the quest database to reflect this character received an item
@@ -111,24 +76,13 @@ looting.give_item = function(member, item_name)
 		debug_logger.quest("QUEST_DB: Incremented %s's %s status in database", character_name, item_name)
 	end
 	
-	-- If this was a quest item, refresh the recipient's task data and update quest globals
+	-- If this was a quest item, refresh the recipient's task data
 	if item_name and quest_interface.is_quest_item(item_name) then
 		debug_logger.quest("QUEST_LOOT: %s received quest item %s - triggering character refresh", character_name, item_name)
 		Write.Info("Quest item %s given to %s - refreshing their task status", item_name, character_name)
 		
 		-- Trigger character-specific task refresh after loot distribution
 		quest_interface.refresh_character_after_loot(character_name, item_name)
-		
-		-- Force rebuild of quest data from current task UI state
-		-- This ensures we have up-to-date quantities since the UI has been refreshed
-		debug_logger.quest("QUEST_LOOT: Rebuilding quest data globals after loot distribution")
-		mq.delay(500)  -- Give the UI a moment to update
-		
-		-- Call back to native quest system to rebuild the global with fresh data
-		if _G.YALM2_REBUILD_QUEST_DATA then
-			_G.YALM2_REBUILD_QUEST_DATA()
-			debug_logger.quest("QUEST_LOOT: Quest data globals rebuilt from UI")
-		end
 	end
 end
 
@@ -255,57 +209,15 @@ looting.get_member_can_loot = function(item, loot, save_slots, dannet_delay, alw
 		debug_logger.info("QUEST_ITEM: %s is needed for quests by [%s]", item_name, table.concat(needed_by, ", "))
 		Write.Info("Quest item detected: %s - using quest distribution logic", item_name)
 		
-		-- Parse quantities from quest data
-		local item_quantities = {}
-		local quest_data_with_qty = _G.YALM2_QUEST_ITEMS_WITH_QTY or ""
-		Write.Info("[GLOBAL CHECK] _G.YALM2_QUEST_ITEMS_WITH_QTY in looting.lua line 259: %s (len=%d)", tostring(quest_data_with_qty), quest_data_with_qty:len())
+		-- Quest data is now retrieved from the database via quest_interface.get_characters_needing_item()
+		-- No need to parse global variables since they're not being populated
+		-- Just distribute to the first character who needs it
 		
-		if quest_data_with_qty:len() > 0 then
-			for item_data in quest_data_with_qty:gmatch("([^|]+)") do
-				local parts = {}
-				for part in item_data:gmatch("([^:]+)") do
-					table.insert(parts, part)
-				end
-				
-				if parts[1] then
-					local detected_item = parts[1]
-					if detected_item:lower() == item_name:lower() or 
-					   detected_item:gsub("s$", ""):lower() == item_name:gsub("s$", ""):lower() then
-						-- Found matching item, parse character quantities
-						if #parts > 1 then
-							for i = 2, #parts do
-								local char_qty_pair = parts[i]
-								local char_name, qty_str = char_qty_pair:match("([^:]+):(.+)")
-								if char_name and qty_str then
-									local qty = tonumber(qty_str)
-									item_quantities[char_name] = qty or 0
-								end
-							end
-						end
-						break
-					end
-				end
+		if needed_by and #needed_by > 0 then
+			local recipient = mq.TLO.Group.Member(needed_by[1])
+			if recipient then
+				looting.give_item(recipient, item_name)
 			end
-		end
-		
-		-- Log quantities for debugging
-		for _, char_name in ipairs(needed_by) do
-			local qty = item_quantities[char_name] or 0
-			debug_logger.info("  %s: needs %d more items", char_name, qty)
-		end
-		
-		-- Use quest-specific distribution logic
-		member = looting.get_quest_item_recipient(item_name, needed_by, item_quantities)
-		
-		if member then
-			debug_logger.info("QUEST_DISTRIBUTION: %s → %s", item_name, member.CleanName())
-			Write.Info("Quest item %s going to %s", item_name, member.CleanName())
-			can_loot = true
-			return can_loot, check_rematch, member, preference
-		else
-			debug_logger.info("QUEST_DISTRIBUTION: No valid recipients for %s - item will be left on corpse", item_name)
-			Write.Info("Quest item %s not needed by anyone - leaving on corpse", item_name)
-			return false, check_rematch, nil, preference
 		end
 	end
 	

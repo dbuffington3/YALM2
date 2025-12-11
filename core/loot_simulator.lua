@@ -168,62 +168,10 @@ function simulator.simulate_loot(item_name_or_id, is_id, force_quest)
     
     -- Check if this is a quest item
     local needed_by = nil
-    Write.Error("[QUEST CHECK] Starting quest detection. force_quest=%s, global var=%s", tostring(force_quest), tostring(_G.YALM2_QUEST_ITEMS_WITH_QTY ~= nil))
-    Write.Error("DEBUG: force_quest=%s, YALM2_QUEST_ITEMS_WITH_QTY=%s", tostring(force_quest), tostring(_G.YALM2_QUEST_ITEMS_WITH_QTY))
-    Write.Error("[GLOBAL CHECK] _G.YALM2_QUEST_ITEMS_WITH_QTY in loot_simulator.lua line 174: %s (len=%d)", tostring(_G.YALM2_QUEST_ITEMS_WITH_QTY or ""), (_G.YALM2_QUEST_ITEMS_WITH_QTY or ""):len())
     
-    if force_quest or _G.YALM2_QUEST_ITEMS_WITH_QTY then
-        Write.Error("[QUEST BLOCK] Entering quest detection block")
-        -- Parse quest data to check if this item is needed
-        local quest_data = _G.YALM2_QUEST_ITEMS_WITH_QTY or ""
-        Write.Error("[GLOBAL CHECK] Using _G.YALM2_QUEST_ITEMS_WITH_QTY in loot_simulator.lua line 177 (len=%d)", quest_data:len())
-        if quest_data:len() > 0 then
-            for item_data in quest_data:gmatch("([^|]+)") do
-                -- Parse: "ItemName:char1:qty1,char2:qty2"
-                local quest_item_name, char_list_str = item_data:match("^([^:]+):(.+)$")
-                
-                if quest_item_name and char_list_str then
-                    -- Check for exact match
-                    local exact_match = (quest_item_name == item_name or quest_item_name:lower() == item_name:lower())
-                    
-                    -- Check for plural/singular variations
-                    local singular_match = false
-                    if not exact_match then
-                        -- Try removing trailing 's' from quest item name
-                        local quest_singular = quest_item_name:gsub("s$", "")
-                        if quest_singular ~= quest_item_name then
-                            singular_match = (quest_singular == item_name or quest_singular:lower() == item_name:lower())
-                        end
-                        
-                        -- Try removing trailing 's' from db item name if no match yet
-                        if not singular_match then
-                            local db_singular = item_name:gsub("s$", "")
-                            if db_singular ~= item_name then
-                                singular_match = (quest_item_name == db_singular or quest_item_name:lower() == db_singular:lower())
-                            end
-                        end
-                    end
-                    
-                    if exact_match or singular_match then
-                        -- Found matching quest item
-                        needed_by = {}
-                        -- Parse character:qty pairs from char_list_str
-                        for char_qty_pair in char_list_str:gmatch("([^,]+)") do
-                            local char_name, qty_str = char_qty_pair:match("^([^:]+):(.+)$")
-                            if char_name and qty_str then
-                                -- Only include characters who still need this item (qty > 0)
-                                local qty = tonumber(qty_str) or 0
-                                if qty > 0 then
-                                    table.insert(needed_by, char_name)
-                                end
-                            end
-                        end
-                        break
-                    end
-                end
-            end
-        end
-    end
+    -- Use quest_interface to check if anyone needs this item
+    -- This queries the database which is properly populated
+    needed_by = quest_interface.get_characters_needing_item(item_name)
     
     if needed_by and #needed_by > 0 then
         Write.Error("QUEST ITEM DETECTED: %s needed by [%s]", item_name, table.concat(needed_by, ", "))
