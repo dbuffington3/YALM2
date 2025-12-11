@@ -14,6 +14,54 @@ require("yalm2.lib.database")  -- Initialize the global Database table
 
 local looting = {}
 
+--- Helper function to generate descriptive "why kept" message
+looting.get_keep_reason = function(preference)
+	if not preference then
+		return "unknown reason"
+	end
+	
+	-- Check if this is a quest item being distributed
+	if preference.data and preference.data.quest_item then
+		if preference.data.task_name then
+			return "quest needed by " .. preference.list[1] .. " for " .. preference.data.task_name
+		end
+		return "quest item needed"
+	end
+	
+	-- Check for valuable quest item override
+	if preference.data and preference.data.valuable_quest_item then
+		return "valuable quest item (worth keeping regardless of quest status)"
+	end
+	
+	-- Check for tradeskill material
+	if preference.data and preference.data.tradeskill then
+		return "tradeskill material"
+	end
+	
+	-- Check for class-specific rule
+	if preference.data and preference.data.class_specific then
+		return "needed for " .. (preference.list and preference.list[1] or "group member")
+	end
+	
+	-- Check for item-specific rule
+	if preference.data and preference.data.item_rule then
+		return "matches item preference rule"
+	end
+	
+	-- Check for loot rule
+	if preference.data and preference.data.loot_rule then
+		return "matches loot rule"
+	end
+	
+	-- Character-specific or global preference
+	if preference.list and #preference.list > 0 then
+		local who = table.concat(preference.list, ", ")
+		return "preference for " .. who
+	end
+	
+	return "configured preference"
+end
+
 looting.am_i_master_looter = function()
 	return mq.TLO.Me.Name() == mq.TLO.Group.MasterLooter.Name()
 end
@@ -405,7 +453,7 @@ looting.handle_master_looting = function(global_settings)
 					debug_logger.warn("QUEST_DISTRIBUTION: No valid recipients in group for %s", item_name)
 				end
 			else
-				Write.Info("QUEST ITEM: %s not currently needed by any characters", item_name)
+				Write.Info("QUEST ITEM SKIPPED: %s - not needed by any characters (checking if valuable or tradeskill)", item_name)
 				debug_logger.info("QUEST_DISTRIBUTION: %s not needed by any characters", item_name)
 			end
 			
@@ -610,7 +658,7 @@ looting.handle_master_looting = function(global_settings)
 		return
 	end
 
-	Write.Info("\a-t%s\ax passes with %s", item_name, utils.get_item_preference_string(preference))
+	Write.Info("\a-t%s\ax KEPT - %s", item_name, looting.get_keep_reason(preference))
 
 	if not can_loot or not member then
 		Write.Warn("No one is able to loot \a-t%s\ax", item_name)
@@ -620,7 +668,7 @@ looting.handle_master_looting = function(global_settings)
 	end
 
 	if item_name == mq.TLO.AdvLoot[loot_list_tlo](1).Name() then
-		Write.Info("Giving \a-t%s\ax to \ao%s\ax", item_name, member.Name())
+		Write.Info("Looting \a-t%s\ax → \ao%s\ax", item_name, member.Name())
 		looting.give_item(member, item_name)
 
 		mq.delay(global_settings.settings.distribute_delay)
@@ -676,7 +724,7 @@ looting.handle_solo_looting = function(global_settings)
 		return
 	end
 
-	Write.Info("\a-t%s\ax passes with %s", item_name, utils.get_item_preference_string(preference))
+	Write.Info("\a-t%s\ax KEPT - %s", item_name, looting.get_keep_reason(preference))
 
 	if not can_loot then
 		Write.Warn("You are unable to loot \a-t%s\ax", item_name)
