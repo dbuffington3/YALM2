@@ -866,6 +866,153 @@ KEY LEARNINGS TO PREVENT RECURRING ISSUES:
 =====================================================================================
 ]]--
 
+-- Character-specific refresh after loot distribution
+-- Only refreshes quest data for a single character (much faster than full system refresh)
+local function refresh_character_after_loot(character_name, item_name)
+    if not character_name or character_name == "" then
+        Write.Debug("[CHAR_REFRESH] Invalid character name provided")
+        return
+    end
+    
+    Write.Debug("[CHAR_REFRESH] Starting character-specific refresh for: %s (item: %s)", character_name, item_name or "unknown")
+    
+    -- Request task update from only this character
+    -- This is much faster than requesting from all characters
+    local command = string.format('/tell %s REQUEST_TASKS', character_name)
+    mq.cmd(command)
+    
+    -- Wait shorter time for just one character to respond
+    mq.delay(2000)  -- 2 seconds should be enough for one character
+    
+    -- Process only the data for this character
+    if not task_data.tasks[character_name] then
+        Write.Debug("[CHAR_REFRESH] No task data found for character: %s", character_name)
+        -- Get fresh data for this character
+        update_tasks()
+    end
+    
+    local character_tasks = task_data.tasks[character_name]
+    if not character_tasks then
+        Write.Debug("[CHAR_REFRESH] Still no task data for character: %s after update", character_name)
+        return
+    end
+    
+    Write.Debug("[CHAR_REFRESH] Processing %d tasks for %s", #character_tasks, character_name)
+    
+    -- Process quest items for this character only
+    local quest_items = {}
+    
+    for _, task in ipairs(character_tasks) do
+        if task.objectives then
+            for _, objective in ipairs(task.objectives) do
+                if objective and objective.objective then
+                    local item_name_extracted = extract_quest_item_from_objective(objective.objective)
+                    
+                    if item_name_extracted then
+                        -- Validate against database
+                        if not YALM2_Database.database then
+                            Write.Debug("[CHAR_REFRESH] Database not available")
+                            return
+                        end
+                        
+                        local db_item = nil
+                        local search_variations = { item_name_extracted }
+                        
+                        -- Try removing trailing 's'
+                        if item_name_extracted:match('s$') then
+                            table.insert(search_variations, item_name_extracted:sub(1, -2))
+                        end
+                        
+                        -- Try removing trailing 'es'
+                        if item_name_extracted:match('es$') then
+                            table.insert(search_variations, item_name_extracted:sub(1, -3))
+                        end
+                        
+                        -- Query variations
+                        for _, search_term in ipairs(search_variations) do
+                            if db_item then break end
+                            
+                            local escaped = search_term:gsub("'", "''")
+                            local query = string.format("SELECT * FROM raw_item_data WHERE name = '%s' LIMIT 1", escaped)
+                            for row in YALM2_Database.database:nrows(query) do
+                                db_item = row
+                                break
+                            end
+                        end
+                        
+                        if db_item and db_item.questitem == 1 then
+                            local canonical_item_name = db_item.name
+                            
+                            if not quest_items[canonical_item_name] then
+                                quest_items[canonical_item_name] = {}
+                            end
+                            
+                            table.insert(quest_items[canonical_item_name], {
+                                character = character_name,
+                                task_name = task.task_name,
+                                objective = objective.objective,
+                                status = objective.status
+                            })
+                            
+                            Write.Debug("[CHAR_REFRESH] Found quest item for %s: %s (status: %s)", character_name, canonical_item_name, objective.status)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Update the global quest data with only this character's items
+    -- Merge with existing data, updating only this character's entries
+    if not _G.YALM2_QUEST_DATA then
+        _G.YALM2_QUEST_DATA = { quest_items = {} }
+    end
+    
+    -- Update quest items for this character
+    for item_name, char_list in pairs(quest_items) do
+        if not _G.YALM2_QUEST_DATA.quest_items[item_name] then
+            _G.YALM2_QUEST_DATA.quest_items[item_name] = {}
+        end
+        
+        -- Remove old entries for this character
+        local filtered = {}
+        for _, entry in ipairs(_G.YALM2_QUEST_DATA.quest_items[item_name]) do
+            if entry.character ~= character_name then
+                table.insert(filtered, entry)
+            end
+        end
+        
+        -- Add new entries for this character
+        for _, entry in ipairs(char_list) do
+            table.insert(filtered, entry)
+        end
+        
+        _G.YALM2_QUEST_DATA.quest_items[item_name] = filtered
+    end
+    
+    _G.YALM2_QUEST_DATA.timestamp = mq.gettime()
+    
+    -- Also update the database for this character's items
+    if quest_items and next(quest_items) then
+        -- Build a subset of quest_items to store (just for this character)
+        local subset_for_db = {}
+        for item_name, char_list in pairs(_G.YALM2_QUEST_DATA.quest_items or {}) do
+            subset_for_db[item_name] = char_list
+        end
+        
+        -- Store all items with all characters (since we merged all data)
+        if not quest_db.init() then
+            Write.Debug("[CHAR_REFRESH] Failed to initialize database")
+        else
+            if quest_db.store_quest_items_from_refresh(subset_for_db) then
+                Write.Debug("[CHAR_REFRESH] Updated database with %d quest items", next(quest_items) and 1 or 0)
+            end
+        end
+    end
+    
+    Write.Debug("[CHAR_REFRESH] Character-specific refresh complete for: %s", character_name)
+end
+
 -- Manual refresh with user-facing messages (separate from automatic refresh)
 local function manual_refresh_with_messages(show_messages)
     -- Default to showing messages if not specified
@@ -1042,18 +1189,21 @@ local function manual_refresh_with_messages(show_messages)
         item_count = item_count + 1
     end
     
-    -- Only write to database during manual refresh (user-initiated)
-    -- Automatic refreshes rely on loot distribution to update DB via increment_quantity_received()
-    if show_messages then
-        if not quest_db.init() then
-            Write.Error("Failed to initialize quest database during refresh")
-        else
-            -- Write the quest items to the database using the new refresh function
-            if quest_db.store_quest_items_from_refresh(quest_items) then
+    -- ALWAYS write to database on every refresh (both manual and silent startup)
+    -- This ensures the database stays in sync with current quest data
+    -- The character-specific refresh will do the same for just that character
+    if not quest_db.init() then
+        Write.Error("Failed to initialize quest database during refresh")
+    else
+        -- Write the quest items to the database using the new refresh function
+        if quest_db.store_quest_items_from_refresh(quest_items) then
+            if show_messages then
                 Write.Debug("[MANUAL_REFRESH] Stored %d quest items in database for %d characters", item_count, #peer_list)
             else
-                Write.Error("[MANUAL_REFRESH] Failed to store quest items in database")
+                Write.Debug("[SILENT_REFRESH] Stored %d quest items in database (auto-update)", item_count)
             end
+        else
+            Write.Error("[MANUAL_REFRESH] Failed to store quest items in database")
         end
     end
     
@@ -1377,6 +1527,9 @@ local function init()
         mq.cmd('/yalm2quest refresh silent')  -- Startup refresh is silent - no quest item messages
     end
 end
+
+-- Export functions for external access (for native_tasks.lua to call)
+_G.YALM2_NATIVE_QUEST_REFRESH_CHARACTER = refresh_character_after_loot
 
 -- Start the system (TaskHUD's exact pattern)
 check_args()

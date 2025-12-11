@@ -119,6 +119,8 @@ looting.give_item = function(member, item_name)
 	if item_name and quest_interface.is_quest_item(item_name) then
 		quest_db.increment_quantity_received(character_name, item_name)
 		debug_logger.quest("QUEST_DB: Incremented %s's %s status in database", character_name, item_name)
+		-- Trigger character-specific quest UI refresh (much faster than full system refresh)
+		quest_interface.refresh_character_after_loot(character_name, item_name)
 	end
 end
 

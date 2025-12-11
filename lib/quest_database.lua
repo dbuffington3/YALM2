@@ -11,9 +11,14 @@ local quest_db = {}
 
 -- Database file path
 local db_path = mq.configDir .. "/YALM2/quest_tasks.db"
+local db_handle = nil  -- Keep persistent connection
 
---- Initialize the database and create schema if needed
-function quest_db.init()
+--- Get or create the database connection
+local function get_db()
+    if db_handle then
+        return db_handle
+    end
+    
     -- Ensure directory exists
     local dir = mq.configDir .. "/YALM2"
     if not lfs.attributes(dir, "mode") then
@@ -23,8 +28,13 @@ function quest_db.init()
     local db = sql.open(db_path)
     if not db then
         Write.Error("[QuestDB] Failed to open database: %s", db_path)
-        return false
+        return nil
     end
+    
+    -- Set pragmas for safety and performance
+    db:exec("PRAGMA journal_mode = DELETE")  -- Use DELETE instead of WAL for better Windows compatibility
+    db:exec("PRAGMA synchronous = NORMAL")
+    db:exec("PRAGMA cache_size = 10000")
     
     -- Create table if it doesn't exist
     local create_sql = [[
@@ -43,12 +53,16 @@ function quest_db.init()
     if result ~= sql.OK then
         Write.Error("[QuestDB] Failed to create table: %s", db:errmsg())
         db:close()
-        return false
+        return nil
     end
     
-    db:close()
-    -- Silent init - no spam messages
-    return true
+    db_handle = db
+    return db_handle
+end
+
+--- Initialize the database and create schema if needed
+function quest_db.init()
+    return get_db() ~= nil
 end
 
 --- Store a character's quest tasks in the database
@@ -61,9 +75,9 @@ function quest_db.store_character_tasks(character_name, tasks)
         return false
     end
     
-    local db = sql.open(db_path)
+    local db = get_db()
     if not db then
-        Write.Error("[QuestDB] Failed to open database")
+        Write.Error("[QuestDB] Failed to get database connection")
         return false
     end
     
@@ -78,7 +92,7 @@ function quest_db.store_character_tasks(character_name, tasks)
     local stmt = db:prepare(delete_sql)
     if not stmt then
         Write.Error("[QuestDB] Failed to prepare delete statement")
-        db:close()
+        db:exec("ROLLBACK")
         return false
     end
     
@@ -117,7 +131,6 @@ function quest_db.store_character_tasks(character_name, tasks)
     
     -- Commit transaction
     db:exec("COMMIT")
-    db:close()
     
     Write.Info("[QuestDB] Stored %d tasks for %s", insert_count, character_name)
     return true
@@ -132,9 +145,9 @@ function quest_db.get_characters_needing_item(item_name)
         return {}
     end
     
-    local db = sql.open(db_path)
+    local db = get_db()
     if not db then
-        Write.Error("[QuestDB] Failed to open database")
+        Write.Error("[QuestDB] Failed to get database connection")
         return {}
     end
     
@@ -160,8 +173,6 @@ function quest_db.get_characters_needing_item(item_name)
         stmt:finalize()
     end
     
-    db:close()
-    
     Write.Debug("[QuestDB] Found %d characters needing %s", #result, item_name)
     return result
 end
@@ -170,7 +181,7 @@ end
 --- Called for debugging or status display
 --- @return table - {item_name = [{character, status}, ...], ...}
 function quest_db.get_all_quest_items()
-    local db = sql.open(db_path)
+    local db = get_db()
     if not db then
         return {}
     end
@@ -200,7 +211,6 @@ function quest_db.get_all_quest_items()
         stmt:finalize()
     end
     
-    db:close()
     return result
 end
 
@@ -215,9 +225,9 @@ function quest_db.update_character_item_status(character_name, item_name, new_st
         return false
     end
     
-    local db = sql.open(db_path)
+    local db = get_db()
     if not db then
-        Write.Error("[QuestDB] Failed to open database")
+        Write.Error("[QuestDB] Failed to get database connection")
         return false
     end
     
@@ -235,19 +245,17 @@ function quest_db.update_character_item_status(character_name, item_name, new_st
         Write.Info("[QuestDB] Updated %s's status for %s to %s", character_name, item_name, new_status)
     end
     
-    db:close()
     return true
 end
 
 --- Clear all tasks (useful for testing or reset)
 function quest_db.clear_all()
-    local db = sql.open(db_path)
+    local db = get_db()
     if not db then
         return false
     end
     
     db:exec("DELETE FROM quest_tasks")
-    db:close()
     
     Write.Info("[QuestDB] Cleared all quest tasks")
     return true
@@ -255,7 +263,7 @@ end
 
 --- Get debug info about the database
 function quest_db.get_status()
-    local db = sql.open(db_path)
+    local db = get_db()
     if not db then
         return {valid = false, message = "Database not found"}
     end
@@ -278,8 +286,6 @@ function quest_db.get_status()
         stmt:finalize()
     end
     
-    db:close()
-    
     return {
         valid = true,
         path = db_path,
@@ -297,9 +303,9 @@ function quest_db.store_quest_items_from_refresh(quest_items)
         return false
     end
     
-    local db = sql.open(db_path)
+    local db = get_db()
     if not db then
-        Write.Error("[QuestDB] Failed to open database")
+        Write.Error("[QuestDB] Failed to get database connection")
         return false
     end
     
@@ -358,8 +364,11 @@ function quest_db.store_quest_items_from_refresh(quest_items)
     end
     
     -- Commit transaction
-    db:exec("COMMIT")
-    db:close()
+    local commit_result = db:exec("COMMIT")
+    
+    -- Force sync to ensure data is written to disk
+    db:exec("PRAGMA synchronous = FULL")
+    db:exec("PRAGMA optimize")
     
     Write.Info("[QuestDB] Stored %d quest item records from refresh (kept Done entries)", insert_count)
     return true
@@ -377,9 +386,9 @@ function quest_db.increment_quantity_received(character_name, item_name)
         return false
     end
     
-    local db = sql.open(db_path)
+    local db = get_db()
     if not db then
-        Write.Error("[QuestDB] Failed to open database")
+        Write.Error("[QuestDB] Failed to get database connection")
         return false
     end
     
@@ -392,7 +401,6 @@ function quest_db.increment_quantity_received(character_name, item_name)
     
     local stmt = db:prepare(query)
     if not stmt then
-        db:close()
         return false
     end
     
@@ -409,7 +417,6 @@ function quest_db.increment_quantity_received(character_name, item_name)
     if not received or not needed then
         -- If status doesn't match the pattern, can't increment
         Write.Error("[QuestDB] Cannot parse status for %s: %s", item_name, current_status)
-        db:close()
         return false
     end
     
@@ -440,8 +447,6 @@ function quest_db.increment_quantity_received(character_name, item_name)
         stmt:step()
         stmt:finalize()
     end
-    
-    db:close()
     
     -- Silent update - no spam messages
     return true

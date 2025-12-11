@@ -91,6 +91,35 @@ function native_tasks.refresh_all_characters()
     end
 end
 
+--- Refresh quest data for a specific character after they receive loot
+function native_tasks.refresh_character_after_loot(character_name, item_name)
+    if not system_active then
+        Write.Debug("[NativeQuest] Native quest system not active, skipping character refresh")
+        return
+    end
+    
+    if not character_name or character_name == "" then
+        Write.Debug("[NativeQuest] Invalid character name for refresh")
+        return
+    end
+    
+    Write.Debug("[NativeQuest] Triggering character-specific refresh for: %s (item: %s)", character_name, item_name or "unknown")
+    
+    -- Call the character-specific refresh function in the coordinator
+    -- This is much faster than full system refresh (only queries one character)
+    local success = pcall(function()
+        if _G.YALM2_NATIVE_QUEST_REFRESH_CHARACTER then
+            _G.YALM2_NATIVE_QUEST_REFRESH_CHARACTER(character_name, item_name)
+        else
+            Write.Debug("[NativeQuest] Coordinator refresh function not available yet")
+        end
+    end)
+    
+    if not success then
+        Write.Debug("[NativeQuest] Character refresh attempt failed (coordinator may still be initializing)")
+    end
+end
+
 --- Get quest items needed by a specific character
 function native_tasks.get_quest_items_for_character(character_name)
     Write.Debug("[NativeQuest] get_quest_items_for_character called for: " .. character_name)
