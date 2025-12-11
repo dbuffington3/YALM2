@@ -446,11 +446,11 @@ looting.handle_master_looting = function(global_settings)
 					debug_logger.warn("QUEST_DISTRIBUTION: No valid recipients in group for %s", item_name)
 				end
 			else
-				Write.Info("QUEST ITEM SKIPPED: %s - not needed by any characters (checking if valuable or tradeskill)", item_name)
-				debug_logger.info("QUEST_DISTRIBUTION: %s not needed by any characters", item_name)
+				debug_logger.info("QUEST_DISTRIBUTION: %s not needed by any characters - checking valuable/tradeskill overrides", item_name)
+				-- Will check preference overrides below (valuable_quest_item, tradeskill)
 			end
 			
-			-- If we get here, no quest distribution occurred, fall through to normal processing
+			-- If we get here, no quest distribution occurred but item is still needed, fall through to normal processing
 			debug_logger.info("QUEST_DISTRIBUTION: Falling back to normal processing for %s", item_name)
 		end
 	end
@@ -481,6 +481,27 @@ looting.handle_master_looting = function(global_settings)
 		tostring(is_quest_item and not legacy_quest_detection), -- true if database detected but legacy didn't
 		tostring(legacy_quest_detection), 
 		tostring(is_quest_item))
+	
+	-- If quest item and no one needs it, check if it has valuable_quest_item or tradeskill overrides
+	if is_quest_item and not (needed_by and #needed_by > 0) then
+		local has_valuable = false
+		local has_tradeskill = false
+		
+		if preference and preference.data then
+			has_valuable = preference.data.valuable_quest_item or false
+			has_tradeskill = preference.data.tradeskill or false
+		end
+		
+		if not (has_valuable or has_tradeskill) then
+			Write.Info("QUEST ITEM SKIPPED: %s - not needed and no valuable/tradeskill override", item_name)
+			debug_logger.info("QUEST_DISTRIBUTION: %s not needed and no overrides - leaving on corpse", item_name)
+			looting.leave_item()
+			return  -- Skip this item entirely, don't fall back to normal processing
+		else
+			debug_logger.info("QUEST_DISTRIBUTION: %s not needed but has override (valuable_quest_item=%s, tradeskill=%s) - processing normally",
+				item_name, tostring(has_valuable), tostring(has_tradeskill))
+		end
+	end
 	
 	if is_quest_item then
 		debug_logger.debug("Quest item loot check - can_loot: %s, preference: %s, member: %s", 

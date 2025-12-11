@@ -513,81 +513,11 @@ local function displayGUI()
             mq.cmd('/yalm2quest refresh')
         end
         
-        ImGui.SameLine()
-        
-        -- Test button - prints per-character needs to console
-        if ImGui.Button("Test Qty Parser") then
-            print("\n" .. string.rep("=", 60))
-            print("PER-CHARACTER QUEST ITEM QUANTITIES TEST")
-            print(string.rep("=", 60))
-            
-            -- Get the quest data from Lua global (MQ2 variables don't work)
-            local quest_data_str = _G.YALM2_QUEST_ITEMS_WITH_QTY or nil
-            
-            if quest_data_str and quest_data_str:len() > 0 then
-                -- Parse the enhanced format: "Item:char1:qty1,char2:qty2|Item2:char3:qty3|"
-                for item_data in quest_data_str:gmatch("([^|]+)") do
-                    local parts = {}
-                    for part in item_data:gmatch("([^:]+)") do
-                        table.insert(parts, part)
-                    end
-                    
-                    if #parts >= 2 then
-                        local item_name = parts[1]
-                        
-                        -- Validate item exists in database
-                        local db_item = nil
-                        local search_variations = {
-                            item_name,
-                            item_name:gsub("s$", ""),  -- Remove trailing 's' for plural
-                            item_name:lower(),
-                            item_name:lower():gsub("s$", "")
-                        }
-                        
-                        for idx, search_term in ipairs(search_variations) do
-                            if db_item then break end
-                            local escaped = search_term:gsub("'", "''")
-                            
-                            local query = string.format("SELECT * FROM raw_item_data WHERE name = '%s' LIMIT 1", escaped)
-                            for row in YALM2_Database.database:nrows(query) do
-                                db_item = row
-                                break
-                            end
-                        end
-                        
-                        -- Display item with DB validation status
-                        if db_item then
-                            print(string.format("\n%s (DB: %s) - FOUND ✓", item_name, db_item.name))
-                        else
-                            print(string.format("\n%s - NOT FOUND IN DB ✗", item_name))
-                        end
-                        
-                        -- Re-parse to get char:qty pairs
-                        local rest = item_data:sub(item_name:len() + 2)  -- Skip "ItemName:"
-                        
-                        for char_qty_pair in rest:gmatch("([^,]+)") do
-                            local char_name, qty_str = char_qty_pair:match("([^:]+):(.+)")
-                            if char_name then
-                                local qty = tonumber(qty_str) or 0  -- Treat "?" as 0
-                                if qty > 0 then
-                                    print(string.format("  %-15s needs %d", char_name, qty))
-                                elseif qty_str == "?" then
-                                    print(string.format("  %-15s DONE ✓ (unknown status, assuming complete)", char_name))
-                                else
-                                    print(string.format("  %-15s DONE ✓", char_name))
-                                end
-                            end
-                        end
-                    end
-                end
-                print(string.rep("=", 60) .. "\n")
-            else
-                print("ERROR: No quest data available - run Refresh Quest Data first!")
-                print(string.rep("=", 60) .. "\n")
-            end
-        end
-        
-        ImGui.SameLine()
+        -- DEBUG FUNCTION KEPT FOR FUTURE USE (button removed from UI)
+        -- Prints per-character quest needs to console
+        -- To use: Create a function that parses _G.YALM2_QUEST_ITEMS_WITH_QTY format "Item:char1:qty1,char2:qty2|Item2:char3:qty3|"
+        -- Function validates items against database and displays character needs
+        -- Currently not called from UI - can be re-enabled or called from slash commands if needed
         
         -- Database View button
         if ImGui.Button("Show Database") then

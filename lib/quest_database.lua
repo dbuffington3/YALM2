@@ -6,6 +6,7 @@ local mq = require("mq")
 local lfs = require("lfs")
 local sql = require("lsqlite3")
 local Write = require("yalm2.lib.Write")
+local debug_logger = require("yalm2.lib.debug_logger")
 
 local quest_db = {}
 
@@ -370,7 +371,7 @@ function quest_db.store_quest_items_from_refresh(quest_items)
     db:exec("PRAGMA synchronous = FULL")
     db:exec("PRAGMA optimize")
     
-    Write.Info("[QuestDB] Stored %d quest item records from refresh (kept Done entries)", insert_count)
+    debug_logger.quest("[QuestDB] Stored %d quest item records from refresh (kept Done entries)", insert_count)
     return true
 end
 

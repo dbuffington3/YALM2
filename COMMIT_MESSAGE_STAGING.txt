@@ -1,0 +1,146 @@
+Refine quest item distribution logic with valuable/tradeskill overrides
+
+QUEST ITEM SKIP IMPROVEMENTS:
+- Quest items no longer fall through to normal loot processing if no one needs them
+- Added check for tradeskill and valuable_quest_item overrides before skipping
+- If quest item not needed AND has neither override → leave on corpse and move to next item
+- Prevents "no loot preference found" spam for items that were already skipped
+
+OVERRIDE FLAGS & CONFIGURATION:
+
+1. TRADESKILL OVERRIDE:
+   - Flag: preference.data.tradeskill (boolean)
+   - Master Setting: config/defaults/global_settings.lua line 412
+   - Setting Name: keep_tradeskills (defaults to true)
+   - Behavior: Quest items with tradeskills=1 in database are kept regardless of quest need
+   - Applies to: Items marked as tradeskill materials in item database
+   - Configurable: Yes, global_settings.lua settings.keep_tradeskills
+
+2. VALUABLE QUEST ITEM OVERRIDE:
+   - Flag: preference.data.valuable_quest_item (boolean)
+   - Master Settings: config/defaults/global_settings.lua lines 420-421
+   - Threshold Settings: 
+     * valuable_item_min_price (default: 100000 platinum)
+     * valuable_item_min_stack (default: 1000 items per stack)
+   - Behavior: Quest items meeting BOTH thresholds are kept regardless of quest need
+   - Logic: item_price >= min_price AND item_stacksize >= min_stack
+   - Configurable: Yes, adjust min_price and min_stack in global_settings.lua
+
+CONFIGURATION LOCATIONS:
+- Primary: config/defaults/global_settings.lua (lines 201-203, 412, 420-421)
+- Accessed via: loot.settings.keep_tradeskills, loot.settings.valuable_item_min_price, loot.settings.valuable_item_min_stack
+- Evaluated in: core/evaluate.lua (lines 335-390)
+- Applied at Distribution: core/looting.lua (lines 485-502)
+
+SPECIFIC CHANGES:
+1. quest_database.lua:
+   - Converted "Stored quest item records" message from Write.Info to debug_logger.quest
+   - Message now only appears when quest debugging is enabled (reduces log spam)
+
+2. looting.lua:
+   - Removed duplicate "QUEST ITEM SKIPPED" messages (was printing twice)
+   - Added comprehensive override check before skipping quest items
+   - If no one needs quest item: check for valuable_quest_item or tradeskill flags
+   - Only skip (leave on corpse) if both checks fail
+   - Calls looting.leave_item() to properly process the item through AdvLoot window
+
+3. yalm2_native_quest.lua:
+   - Removed Test Qty Parser button from native quest UI
+   - Kept debugging logic in comments for future use if needed
+
+LINKDB UPDATE UTILITIES:
+Two utility scripts have been created to update MQ2LinkDB with Lucy item data:
+
+1. update_linkdb.lua (Single Item Updates):
+   - Purpose: Update individual quest items in MQ2LinkDB with Lucy item data
+   - Usage: UpdateLinkDB.update_single_item(item_id)
+   - Features:
+     * Reads Lucy JSON files (format: lucy_item_ITEMID.json)
+     * Dynamically detects missing columns in raw_item_data table
+     * Adds new columns as needed based on Lucy data
+     * Updates item record with all available Lucy fields
+   - Accomplishment: Enables importing quest item metadata from Lucy without schema conflicts
+
+2. batch_update_linkdb.lua (Bulk Updates):
+   - Purpose: Process multiple Lucy JSON files in batch operations
+   - Features:
+     * Uses SQLite transactions for performance
+     * Processes items in groups with progress reporting
+     * Counts successful/failed updates
+     * Suitable for bulk quest item database population
+   - Use Case: Running after collecting Lucy item data for multiple quest items
+
+LUCY DATA COLLECTION WORKFLOW:
+Lucy item data is collected using a Node.js scraper built to extract item metadata from Lucy Allakhazam database.
+The scraper toolset has been integrated into this repository for complete workflow documentation:
+
+1. lucy_scraper.js (Node.js Puppeteer-based Web Scraper):
+   - Core scraping engine using Puppeteer with cluster management
+   - Configuration:
+     * Concurrency: 30 simultaneous browser instances (tunable for hardware/network)
+     * Task timeout: 10 seconds per item
+     * Max retries: 5 attempts per item with exponential backoff
+     * Output: Saves JSON files to D:\lucy directory as lucy_item_ITEMID.json
+   - Features:
+     * Automatic HTML table parsing (extracts all fields from Lucy's spellview table)
+     * Item type decoding (translates numeric codes to meaningful names)
+     * Class bitfield decoder (converts bitmasks to class abbreviations)
+     * Comprehensive error handling with debug logging and screenshots
+     * Hang detection and recovery mechanisms
+     * Failed item tracking for retry/analysis
+   - Dependencies: puppeteer, puppeteer-cluster, node-fetch (see package.json)
+
+2. itemlist.txt (Item ID Database):
+   - Comprehensive CSV file containing 134,083+ items
+   - Format: id,name,lucylink (CSV with headers)
+   - Contains complete mapping of every item ID to its Lucy database URL
+   - Used as input to determine which items to scrape
+   - Enables selective scraping (can be filtered for specific quest items)
+
+3. run_scraper.ps1 (PowerShell Orchestrator):
+   - Auto-restart wrapper for robust batch processing
+   - Configuration:
+     * Max restarts: 1000 (survives transient failures)
+     * Restart delay: 5 seconds between attempts
+     * Detailed progress reporting with colored output
+   - Features:
+     * Monitors node process exit codes
+     * Auto-restarts on failure/hang
+     * Time-stamped logging for troubleshooting
+     * Success/failure notification
+     * Debug log directory reference (D:\lucy\debug\)
+   - Usage: ./run_scraper.ps1 (will call lucy_scraper.js itemlist.txt)
+
+4. package.json (Node.js Dependencies):
+   - Puppeteer: Browser automation for HTML parsing
+   - Puppeteer-cluster: Manages parallel browser instances
+   - Node-fetch: HTTP requests for fallback mechanisms
+   - All dependencies specified with versions in package-lock.json
+
+DATA FLOW:
+  itemlist.txt (item IDs)
+    ↓
+  run_scraper.ps1 (orchestrator)
+    ↓
+  lucy_scraper.js (scraper engine)
+    ↓
+  lucy_item_ITEMID.json files (D:\lucy\)
+    ↓
+  update_linkdb.lua (imports to SQLite)
+    ↓
+  MQ2LinkDB enriched with Lucy metadata
+
+IMPLEMENTATION APPROACH:
+- Lucy data collected externally via Node.js scraper
+- Scraped data stored as JSON files locally in YALM2 directory
+- update_linkdb.lua imports JSON files into MQ2LinkDB
+- Schema-flexible approach: detects existing LinkDB columns and adds missing ones
+- Parameterized SQL queries prevent injection issues
+- Transaction-based batch updates ensure data consistency
+- Supports both individual item updates and bulk processing
+
+TESTING:
+- Quest items with no recipients properly skip to next item
+- Items marked as valuable/tradeskill are still processed
+- No more log spam from duplicate skip messages
+- System advances through AdvLoot queue correctly
