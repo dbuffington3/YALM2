@@ -117,8 +117,15 @@ looting.give_item = function(member, item_name)
 	-- Increment their quest progress immediately (e.g., 0/2 → 1/2)
 	-- This way the ML knows the distribution state without waiting for refresh
 	if item_name and quest_interface.is_quest_item(item_name) then
-		quest_db.increment_quantity_received(character_name, item_name)
-		debug_logger.quest("QUEST_DB: Incremented %s's %s status in database", character_name, item_name)
+		local result = quest_db.increment_quantity_received(character_name, item_name)
+		if result and result.success then
+			debug_logger.quest("QUEST_DB: Incremented %s's %s status to %s", character_name, item_name, result.status)
+			
+			-- Broadcast the quest item update to the UI so it can refresh just that one row
+			-- without needing a full character task refresh
+			mq.docommand(string.format("/danknet -k quest_ml_update -- QUEST_ITEM_GIVEN|%s|%s|%s", 
+				character_name, item_name, result.status))
+		end
 	end
 	
 	-- If this was a quest item, refresh the recipient's task data
