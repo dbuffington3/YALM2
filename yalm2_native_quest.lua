@@ -627,43 +627,6 @@ local function displayGUI()
             end
         end
         
-        -- Simulator test buttons - create a button for each quest item
-        if _G.YALM2_QUEST_ITEMS_WITH_QTY and _G.YALM2_QUEST_ITEMS_WITH_QTY:len() > 0 then
-            ImGui.Separator()
-            ImGui.Text("Loot Simulator (test distribution logic):")
-            
-            local simulator = require("yalm2.core.loot_simulator")
-            local quest_data_str = _G.YALM2_QUEST_ITEMS_WITH_QTY
-            local button_index = 1
-            
-            -- Parse quest items and create test buttons
-            for item_data in quest_data_str:gmatch("([^|]+)") do
-                local parts = {}
-                for part in item_data:gmatch("([^:]+)") do
-                    table.insert(parts, part)
-                end
-                
-                if parts[1] then
-                    local item_name = parts[1]
-                    local button_label = "Test: " .. item_name .. "##sim_" .. button_index
-                    
-                    if ImGui.Button(button_label, 200, 0) then
-                        -- Run simulator for this quest item
-                        simulator.simulate_loot(item_name, false, true)
-                    end
-                    
-                    if button_index % 2 == 1 and button_index < 20 then
-                        ImGui.SameLine()
-                    else
-                        ImGui.NewLine()
-                    end
-                    
-                    button_index = button_index + 1
-                end
-            end
-            ImGui.NewLine()
-        end
-        
         ImGui.NextColumn()
         if #peer_list > 0 then
             -- Character selection dropdown
