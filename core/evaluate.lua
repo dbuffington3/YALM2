@@ -357,9 +357,14 @@ evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_ite
 				else
 					debug_logger.info("QUEST: No characters need this item for quests")
 					if is_quest_item then
-						debug_logger.info("QUEST: NoRent quest item not needed - ignoring")
-						debug_logger.info("=== LOOT ANALYSIS END: QUEST IGNORE ===")
-						return { setting = "Ignore" }
+						debug_logger.info("QUEST: Quest item not needed by anyone - immediate skip (1 second delay)")
+						debug_logger.info("=== LOOT ANALYSIS END: QUEST SKIP ===")
+						-- Return a special marker for immediate skip without long delay
+						return { 
+							setting = "Ignore", 
+							skip_immediately = true,
+							data = { quest_item = true, not_needed = true }
+						}
 					end
 				end
 			else
