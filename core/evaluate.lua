@@ -332,6 +332,20 @@ evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_ite
 			local is_quest_item = (loot_item.item_db.questitem == 1)
 			debug_logger.info("LOOT: Quest Item Detection: %s (questitem=%s)", tostring(is_quest_item), tostring(loot_item.item_db.questitem))
 			
+			-- EARLY BAILOUT: If quest item is valuable, treat as regular loot
+			-- If price > 1pp (100000 copper) and stacks to 1000+, skip quest system
+			if is_quest_item then
+				local item_price = loot_item.item_db.price or 0
+				local item_stacksize = loot_item.item_db.stacksize or 0
+				
+				if item_price > 100000 and item_stacksize >= 1000 then
+					debug_logger.info("LOOT: Quest item has high value (price=%d, stacksize=%d) - treating as regular loot", 
+						item_price, item_stacksize)
+					is_quest_item = false  -- Treat as regular loot, not quest item
+					debug_logger.info("LOOT: Skipping quest system for valuable quest item, using normal loot rules")
+				end
+			end
+			
 			-- QUEST SYSTEM CHECK - ONLY for items flagged as quest items
 			if is_quest_item and quest_interface and quest_interface.get_quest_characters_local then
 				debug_logger.info("QUEST: This is a quest item - checking for characters who need it...")
@@ -359,7 +373,7 @@ evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_ite
 					return { setting = "Ignore" }
 				end
 			elseif not is_quest_item then
-				debug_logger.info("LOOT: Not a quest item (questitem=0) - skipping quest system, using normal loot rules")
+				debug_logger.info("LOOT: Not a quest item (questitem=0 or valuable quest item) - skipping quest system, using normal loot rules")
 			end
 		else
 			debug_logger.warn("LOOT: No database information available for item")
