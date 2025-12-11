@@ -332,9 +332,9 @@ evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_ite
 			local is_quest_item = (loot_item.item_db.questitem == 1)
 			debug_logger.info("LOOT: Quest Item Detection: %s (questitem=%s)", tostring(is_quest_item), tostring(loot_item.item_db.questitem))
 			
-			-- QUEST SYSTEM CHECK - Use local parsing like the simulator does
-			if quest_interface and quest_interface.get_quest_characters_local then
-				debug_logger.info("QUEST: Using direct local quest character matching (no cross-script calls)...")
+			-- QUEST SYSTEM CHECK - ONLY for items flagged as quest items
+			if is_quest_item and quest_interface and quest_interface.get_quest_characters_local then
+				debug_logger.info("QUEST: This is a quest item - checking for characters who need it...")
 				debug_logger.info("QUEST: Looking for characters needing item: %s", item_name)
 				
 				local chars = quest_interface.get_quest_characters_local(item_name)
@@ -342,31 +342,24 @@ evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_ite
 				
 				if chars and #chars > 0 then
 					debug_logger.info("QUEST: Characters needing this item: %s", table.concat(chars, ", "))
-					
-					if is_quest_item then
-						debug_logger.info("QUEST: DIRECT ASSIGNMENT - Quest item needed by quest characters")
-						debug_logger.info("=== LOOT ANALYSIS END: QUEST DIRECT ===")
-						return { 
-							setting = "Keep", 
-							list = chars,
-							data = { quest_item = true, direct_assignment = true }
-						}
-					else
-						debug_logger.info("QUEST: Item needed for quest but not flagged as NoRent - using normal loot rules")
-					end
+					debug_logger.info("QUEST: DIRECT ASSIGNMENT - Quest item needed by quest characters")
+					debug_logger.info("=== LOOT ANALYSIS END: QUEST DIRECT ===")
+					return { 
+						setting = "Keep", 
+						list = chars,
+						data = { quest_item = true, direct_assignment = true }
+					}
 				else
-					debug_logger.info("QUEST: No characters need this item for quests")
-					if is_quest_item then
-						-- Quest item is not needed right now, but don't let saved preferences block it
-						-- We want future quests to be able to pick it up
-						-- Simply ignore it for now - saved preferences are for non-quest items only
-						debug_logger.info("QUEST: Quest item not needed by anyone - ignoring (will be available for future quests)")
-						debug_logger.info("=== LOOT ANALYSIS END: QUEST IGNORE ===")
-						return { setting = "Ignore" }
-					end
+					debug_logger.info("QUEST: No characters need this quest item right now")
+					-- Quest item is not needed right now, but don't let saved preferences block it
+					-- We want future quests to be able to pick it up
+					-- Simply ignore it for now - saved preferences are for non-quest items only
+					debug_logger.info("QUEST: Quest item not needed by anyone - ignoring (will be available for future quests)")
+					debug_logger.info("=== LOOT ANALYSIS END: QUEST IGNORE ===")
+					return { setting = "Ignore" }
 				end
-			else
-				debug_logger.warn("QUEST: quest_interface not available with get_quest_characters_local")
+			elseif not is_quest_item then
+				debug_logger.info("LOOT: Not a quest item (questitem=0) - skipping quest system, using normal loot rules")
 			end
 		else
 			debug_logger.warn("LOOT: No database information available for item")
