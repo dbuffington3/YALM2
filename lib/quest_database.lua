@@ -615,6 +615,85 @@ function quest_db.store_objective(objective_text, task_name, item_name)
     return false
 end
 
+--- Get all cached objectives as a map for efficient lookups
+--- Used for efficient refresh - check which objectives are already cached
+--- @return table - Map of objective -> {task_name, item_name}
+function quest_db.get_all_cached_objectives()
+    local db = get_db()
+    if not db then
+        return {}
+    end
+    
+    local cached_map = {}
+    local query = "SELECT objective, task_name, item_name FROM quest_objectives"
+    
+    for row in db:nrows(query) do
+        cached_map[row.objective] = {
+            task_name = row.task_name,
+            item_name = row.item_name
+        }
+    end
+    
+    return cached_map
+end
+
+--- Build quest_items directly from cached objectives and character task data
+--- OPTIMIZATION: Skip fuzzy matching entirely - use cached item names only
+--- Used by efficient refresh to populate quest_items with zero fuzzy matching
+--- @param task_data table - Character tasks {character = {objectives...}}
+--- @param cached_objectives table - Map from get_all_cached_objectives()
+--- @return table - quest_items structure ready for storage
+function quest_db.build_quest_items_from_cached_objectives(task_data, cached_objectives)
+    if not task_data or not cached_objectives then
+        return {}
+    end
+    
+    local quest_items = {}
+    
+    -- Process all tasks using ONLY cached objective data
+    for character_name, tasks in pairs(task_data) do
+        for _, task in ipairs(tasks) do
+            if task.objectives then
+                for _, objective in ipairs(task.objectives) do
+                    if objective and objective.objective then
+                        -- EFFICIENCY: Check ONLY the cache, no extraction or fuzzy matching
+                        local cached_data = cached_objectives[objective.objective]
+                        if cached_data then
+                            local item_name = cached_data.item_name
+                            
+                            -- Add to quest items (same logic as normal refresh)
+                            if not quest_items[item_name] then
+                                quest_items[item_name] = {}
+                            end
+                            
+                            local already_added = false
+                            for _, existing in ipairs(quest_items[item_name]) do
+                                if existing.character == character_name then
+                                    already_added = true
+                                    break
+                                end
+                            end
+                            
+                            if not already_added then
+                                table.insert(quest_items[item_name], {
+                                    character = character_name,
+                                    task_name = task.task_name,
+                                    objective = objective.objective,
+                                    status = objective.status
+                                })
+                            end
+                        end
+                        -- CRITICAL: Objectives NOT in cache are SKIPPED entirely
+                        -- They will be added on next full refresh when someone completes them
+                    end
+                end
+            end
+        end
+    end
+    
+    return quest_items
+end
+
 return quest_db
     
 

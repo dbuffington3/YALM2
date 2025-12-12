@@ -812,6 +812,47 @@ KEY LEARNINGS TO PREVENT RECURRING ISSUES:
 =====================================================================================
 ]]--
 
+--- OPTIMIZATION: Efficient refresh using ONLY cached objectives
+--- Skips all extraction and fuzzy matching for already-cached objectives
+--- Dramatically reduces processing overhead on subsequent refreshes
+--- 
+--- @param character_name string|nil - Character to refresh (optional, nil = all characters)
+--- @return table - quest_items structure
+local function efficient_refresh_from_cache(character_name)
+    Write.Debug("[EFFICIENT_REFRESH] Starting cached-only refresh" .. (character_name and (" for " .. character_name) or ""))
+    
+    -- Get all cached objectives once (avoids repeated database queries)
+    local cached_objectives = quest_db.get_all_cached_objectives()
+    Write.Debug("[EFFICIENT_REFRESH] Loaded %d cached objectives", next(cached_objectives) and 1 or 0)
+    
+    -- Build task data to process
+    local all_tasks = {}
+    if character_name then
+        -- Single character
+        if task_data.my_tasks and character_name == my_name then
+            all_tasks[my_name] = task_data.my_tasks
+        elseif task_data.tasks[character_name] then
+            all_tasks[character_name] = task_data.tasks[character_name]
+        end
+    else
+        -- All characters
+        if task_data.my_tasks and #task_data.my_tasks > 0 then
+            all_tasks[my_name] = task_data.my_tasks
+        end
+        for char_name, tasks in pairs(task_data.tasks) do
+            all_tasks[char_name] = tasks
+        end
+    end
+    
+    -- Use cached objectives to build quest_items
+    -- This SKIPS extraction and fuzzy matching entirely
+    local quest_items = quest_db.build_quest_items_from_cached_objectives(all_tasks, cached_objectives)
+    
+    Write.Debug("[EFFICIENT_REFRESH] Built quest_items from cache: %d items", next(quest_items) and 1 or 0)
+    
+    return quest_items
+end
+
 -- Character-specific refresh after loot distribution
 -- Only refreshes quest data for a single character (much faster than full system refresh)
 local function refresh_character_after_loot(character_name, item_name)
@@ -1237,75 +1278,10 @@ local function main()
             =====================================================================================
             ]]--
             
-            -- Parse quest items from all character task data (SILENT PROCESSING - NO USER MESSAGES!)
-            local quest_items = {}
-            -- CRITICAL: Use same data source and logic as manual refresh
-            -- Include both ML's own tasks (task_data.my_tasks) and other characters' tasks (task_data.tasks)
-            local all_tasks = {}
-            if task_data.my_tasks and #task_data.my_tasks > 0 then
-                all_tasks[my_name] = task_data.my_tasks
-            end
-            for character_name, tasks in pairs(task_data.tasks) do
-                all_tasks[character_name] = tasks
-            end
-            
-            for character_name, tasks in pairs(all_tasks) do
-                for _, task in ipairs(tasks) do
-                    for _, objective in ipairs(task.objectives) do
-                        -- Use same smart extraction as manual refresh
-                        local item_name = extract_quest_item_from_objective(objective.objective)
-                        
-                        if item_name then
-                            -- Validate against database using fuzzy matching (silent operation - no debug)
-                            if not YALM2_Database.database then
-                                -- Skip validation if database not available
-                                break
-                            end
-                            
-                            -- OPTIMIZATION: Check if we've already matched this objective
-                            -- First check quest_objectives table (static cache of matched items)
-                            local objective_data = quest_db.get_objective(objective.objective)
-                            local matched_item_name = nil
-                            
-                            if objective_data and objective_data.item_name then
-                                -- Already matched before - use the cached result (NO fuzzy matching!)
-                                matched_item_name = objective_data.item_name
-                            else
-                                -- New objective - perform fuzzy matching once and cache it
-                                matched_item_name = quest_interface.find_matching_quest_item(item_name)
-                                if matched_item_name then
-                                    -- Store in quest_objectives for future lookups
-                                    quest_db.store_objective(objective.objective, task.task_name, matched_item_name)
-                                end
-                            end
-                            
-                            if matched_item_name then
-                                -- Add to quest items (same logic as manual refresh)
-                                if not quest_items[matched_item_name] then
-                                    quest_items[matched_item_name] = {}
-                                end
-                                
-                                local already_added = false
-                                for _, existing in ipairs(quest_items[matched_item_name]) do
-                                    if existing.character == character_name then
-                                        already_added = true
-                                        break
-                                    end
-                                end
-                                
-                                if not already_added then
-                                    table.insert(quest_items[matched_item_name], {
-                                        task_name = task.task_name,      -- CRITICAL: task_name field
-                                        objective = objective.objective, -- CRITICAL: objective field  
-                                        status = objective.status,
-                                        character = character_name
-                                    })
-                                end
-                            end
-                        end
-                    end  -- Close for _, objective
-                end  -- Close for _, task  
-            end  -- Close for character_name, tasks
+            -- OPTIMIZATION: Use efficient refresh with cached objectives only
+            -- This skips ALL extraction and fuzzy matching if objective is cached
+            -- Dramatically reduces processing overhead on every 3-second cycle
+            local quest_items = efficient_refresh_from_cache()
             
             -- Store in global variable for YALM2 core to access
             _G.YALM2_QUEST_DATA = {
