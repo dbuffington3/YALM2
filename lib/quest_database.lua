@@ -37,8 +37,8 @@ local function get_db()
     db:exec("PRAGMA synchronous = NORMAL")
     db:exec("PRAGMA cache_size = 10000")
     
-    -- Create table if it doesn't exist
-    local create_sql = [[
+    -- Create quest_tasks table (stores task data with status per character)
+    local create_tasks_sql = [[
         CREATE TABLE IF NOT EXISTS quest_tasks (
             character TEXT NOT NULL,
             task_name TEXT NOT NULL,
@@ -50,9 +50,28 @@ local function get_db()
         )
     ]]
     
-    local result = db:exec(create_sql)
+    local result = db:exec(create_tasks_sql)
     if result ~= sql.OK then
-        Write.Error("[QuestDB] Failed to create table: %s", db:errmsg())
+        Write.Error("[QuestDB] Failed to create quest_tasks table: %s", db:errmsg())
+        db:close()
+        return nil
+    end
+    
+    -- Create quest_objectives table (stores static objective data with matched items)
+    -- This table is populated once per unique objective and never changes
+    local create_objectives_sql = [[
+        CREATE TABLE IF NOT EXISTS quest_objectives (
+            objective TEXT PRIMARY KEY,
+            task_name TEXT NOT NULL,
+            item_name TEXT,
+            matched_at INTEGER,
+            created_at INTEGER
+        )
+    ]]
+    
+    result = db:exec(create_objectives_sql)
+    if result ~= sql.OK then
+        Write.Error("[QuestDB] Failed to create quest_objectives table: %s", db:errmsg())
         db:close()
         return nil
     end
@@ -451,6 +470,149 @@ function quest_db.increment_quantity_received(character_name, item_name)
     
     -- Silent update - no spam messages
     return true
+end
+
+--- Check if we've already matched this objective to an item
+--- Returns the previously matched item name if found, nil if not in database
+--- @param character_name string - Character name
+--- @param objective_text string - The objective text
+--- @return string|nil - The cached matched item name, or nil if not found
+function quest_db.get_cached_item_match(character_name, objective_text)
+    if not character_name or not objective_text then
+        return nil
+    end
+    
+    local db = get_db()
+    if not db then
+        return nil
+    end
+    
+    -- Query to find this objective for this character
+    local query = [[
+        SELECT item_name FROM quest_tasks 
+        WHERE character = ? AND objective = ? AND item_name IS NOT NULL AND item_name != ''
+        LIMIT 1
+    ]]
+    
+    local stmt = db:prepare(query)
+    if not stmt then
+        return nil
+    end
+    
+    stmt:bind_values(character_name, objective_text)
+    local result = nil
+    
+    if stmt:step() == sql.ROW then
+        result = stmt:get_values()[1]
+    end
+    
+    stmt:finalize()
+    return result
+end
+
+--- Store a matched objective item for future reference
+--- Called after fuzzy matching succeeds to avoid re-matching
+--- @param character_name string - Character name
+--- @param task_name string - Task name
+--- @param objective_text string - The objective text
+--- @param matched_item_name string - The matched item name from fuzzy matching
+--- @return boolean - True if successful
+function quest_db.store_matched_item(character_name, task_name, objective_text, matched_item_name)
+    if not character_name or not objective_text or not matched_item_name then
+        return false
+    end
+    
+    local db = get_db()
+    if not db then
+        return false
+    end
+    
+    -- Update or insert
+    local update_sql = [[
+        UPDATE quest_tasks 
+        SET item_name = ?, updated_at = ?
+        WHERE character = ? AND objective = ? AND task_name = ?
+    ]]
+    
+    local stmt = db:prepare(update_sql)
+    if stmt then
+        stmt:bind_values(matched_item_name, mq.gettime(), character_name, objective_text, task_name or "")
+        stmt:step()
+        stmt:finalize()
+    end
+    
+    return true
+end
+
+--- Check if an objective already exists in the quest_objectives table
+--- @param objective_text string - The objective text
+--- @return table|nil - {task_name, item_name, matched_at} if found, nil if not
+function quest_db.get_objective(objective_text)
+    if not objective_text then
+        return nil
+    end
+    
+    local db = get_db()
+    if not db then
+        return nil
+    end
+    
+    local query = [[
+        SELECT task_name, item_name, matched_at FROM quest_objectives WHERE objective = ?
+    ]]
+    
+    local stmt = db:prepare(query)
+    if not stmt then
+        return nil
+    end
+    
+    stmt:bind_values(objective_text)
+    local result = nil
+    
+    if stmt:step() == sql.ROW then
+        local row = stmt:get_values()
+        result = {
+            task_name = row[1],
+            item_name = row[2],
+            matched_at = row[3]
+        }
+    end
+    
+    stmt:finalize()
+    return result
+end
+
+--- Store a new objective with its matched item name
+--- Called when we encounter a new objective for the first time
+--- @param objective_text string - The objective text
+--- @param task_name string - The task name
+--- @param item_name string - The matched item name (result of fuzzy matching)
+--- @return boolean - True if successful
+function quest_db.store_objective(objective_text, task_name, item_name)
+    if not objective_text or not task_name or not item_name then
+        return false
+    end
+    
+    local db = get_db()
+    if not db then
+        return false
+    end
+    
+    local now = mq.gettime()
+    local insert_sql = [[
+        INSERT OR REPLACE INTO quest_objectives (objective, task_name, item_name, matched_at, created_at)
+        VALUES (?, ?, ?, ?, ?)
+    ]]
+    
+    local stmt = db:prepare(insert_sql)
+    if stmt then
+        stmt:bind_values(objective_text, task_name, item_name, now, now)
+        local result = stmt:step()
+        stmt:finalize()
+        return result == sql.DONE
+    end
+    
+    return false
 end
 
 return quest_db

@@ -107,10 +107,6 @@ local triggers = {
     last_data_send = 0
 }
 
--- Cache for fuzzy match results to avoid repeated database lookups
--- Maps extracted item name -> matched item name (prevents repeated fuzzy matching)
-local fuzzy_match_cache = {}
-
 -- UI view mode (0 = Task view, 1 = Database view)
 local ui_view_mode = 0
 
@@ -329,8 +325,6 @@ end)
 
 local function request_task_update()
     actor:send({ id = 'REQUEST_TASKS' })
-    -- Clear the fuzzy match cache when refreshing to ensure fresh lookups
-    fuzzy_match_cache = {}
     -- Also trigger quest data sharing after refresh completes
     mq.delay(5000)  -- Wait for all characters to respond
     triggers.need_yalm2_data_send = true
@@ -869,14 +863,15 @@ local function refresh_character_after_loot(character_name, item_name)
                             return
                         end
                         
-                        -- Check cache first, then call fuzzy matching if needed
-                        local matched_item_name = fuzzy_match_cache[item_name_extracted]
-                        if matched_item_name == nil then
+                        -- OPTIMIZATION: Check if we've already matched this objective
+                        local matched_item_name = quest_db.get_cached_item_match(character_name, objective.objective)
+                        
+                        -- If not cached, perform fuzzy matching and store the result
+                        if not matched_item_name then
                             matched_item_name = quest_interface.find_matching_quest_item(item_name_extracted)
-                            fuzzy_match_cache[item_name_extracted] = matched_item_name or false
-                        end
-                        if matched_item_name == false then
-                            matched_item_name = nil
+                            if matched_item_name then
+                                quest_db.store_matched_item(character_name, task.task_name, objective.objective, matched_item_name)
+                            end
                         end
                         
                         if matched_item_name then
@@ -1006,14 +1001,15 @@ local function manual_refresh_with_messages(show_messages)
                                     return
                                 end
                                 
-                                -- Check cache first, then call fuzzy matching if needed
-                                local matched_item_name = fuzzy_match_cache[item_name]
-                                if matched_item_name == nil then
+                                -- OPTIMIZATION: Check if we've already matched this objective
+                                local matched_item_name = quest_db.get_cached_item_match(my_name, objective.objective)
+                                
+                                -- If not cached, perform fuzzy matching and store the result
+                                if not matched_item_name then
                                     matched_item_name = quest_interface.find_matching_quest_item(item_name)
-                                    fuzzy_match_cache[item_name] = matched_item_name or false
-                                end
-                                if matched_item_name == false then
-                                    matched_item_name = nil
+                                    if matched_item_name then
+                                        quest_db.store_matched_item(my_name, task.task_name, objective.objective, matched_item_name)
+                                    end
                                 end
                                 
                                 if matched_item_name then
@@ -1252,18 +1248,17 @@ local function main()
                                 break
                             end
                             
-                            -- Check fuzzy match cache first to avoid repeated lookups
-                            local matched_item_name = fuzzy_match_cache[item_name]
+                            -- OPTIMIZATION: Check if we've already matched this objective to an item
+                            -- This avoids repeated fuzzy matching for the same objectives
+                            local matched_item_name = quest_db.get_cached_item_match(character_name, objective.objective)
                             
-                            -- If not in cache, perform fuzzy matching and cache the result
-                            if matched_item_name == nil then
+                            -- If not cached, perform fuzzy matching and store the result
+                            if not matched_item_name then
                                 matched_item_name = quest_interface.find_matching_quest_item(item_name)
-                                fuzzy_match_cache[item_name] = matched_item_name or false  -- Cache nil results as false
-                            end
-                            
-                            -- If cached result was false, skip it
-                            if matched_item_name == false then
-                                matched_item_name = nil
+                                if matched_item_name then
+                                    -- Cache the result in the database for future refreshes
+                                    quest_db.store_matched_item(character_name, task.task_name, objective.objective, matched_item_name)
+                                end
                             end
                             
                             if matched_item_name then
