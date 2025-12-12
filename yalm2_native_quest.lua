@@ -81,7 +81,7 @@ if not YALM2_Database.database then
 end
 
 -- Initialize quest_interface with the database reference
-quest_interface.initialize(nil, nil, nil, YALM2_Database)
+quest_interface.initialize(nil, nil, YALM2_Database)
 
 -- Arguments passed when starting the script  
 local args = { ... }
