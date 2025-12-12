@@ -22,7 +22,6 @@ require("yalm2.lib.database")
 
 local configuration = require("yalm2.config.configuration")
 local settings = require("yalm2.config.settings")
-local tasks = require("yalm2.core.tasks")
 local native_tasks = require("yalm2.core.native_tasks")
 local quest_interface = require("yalm2.core.quest_interface")
 local state = require("yalm2.config.state")
@@ -65,28 +64,10 @@ local function cmd_handler(...)
 	elseif command == "reload" then
 		Write.Info("Stopping YALM2. Please run: /lua run yalm2")
 		state.terminate = true
-	elseif command == "nativequest" then
-		global_settings.settings.use_native_quest_system = not global_settings.settings.use_native_quest_system
-		
-		-- Save the setting permanently
-		settings.save_global_settings(settings.get_global_settings_filename(), global_settings)
-		
-		Write.Info("Native quest system %s (saved to config)", 
-			global_settings.settings.use_native_quest_system and "ENABLED" or "DISABLED")
-		Write.Info("Reload YALM2 for this change to take effect: /yalm2 reload")
 	elseif command == "taskrefresh" then
-		if global_settings.settings.use_native_quest_system then
-			Write.Debug("Manual quest refresh requested")
-			native_tasks.refresh_all_characters()
-			Write.Info("Quest data refresh requested")  -- Single success message
-		else
-			Write.Info("Refreshing external TaskHUD data...")
-			if tasks.request_task_update then
-				tasks.request_task_update()
-			else
-				Write.Warn("External TaskHUD refresh not available")
-			end
-		end
+		Write.Debug("Manual quest refresh requested")
+		native_tasks.refresh_all_characters()
+		Write.Info("Quest data refresh requested")
 	elseif command == "dannetdiag" then
 		Write.Info("Running DanNet connectivity diagnostics...")
 		local dannet_diag = require("yalm2.diagnostics.dannet_discovery")
@@ -177,31 +158,20 @@ local function initialize()
 
 	Write.loglevel = global_settings.settings.log_level
 	
-	-- Initialize quest interface with both systems
-	quest_interface.initialize(global_settings, tasks, native_tasks)
+	-- Initialize quest interface with native quest system and database
+	quest_interface.initialize(global_settings, native_tasks, YALM2_Database)
 	
-	-- Initialize task awareness system
-	if global_settings.settings.use_native_quest_system then
-		Write.Info("Using native quest detection system")
-		debug_logger.info("INIT: Using native quest system instead of external TaskHUD")
-		local success = native_tasks.initialize()
-		if not success then
-			Write.Warn("Native quest system initialization failed - falling back to external TaskHUD")
-			debug_logger.warn("INIT: Native quest system failed, falling back to TaskHUD")
-			-- Initialize external system
-			tasks.init()
-			-- Update quest interface to use external system
-			global_settings.settings.use_native_quest_system = false
-			quest_interface.initialize(global_settings, tasks, native_tasks)
-		else
-			Write.Info("Native quest system initialized successfully")
-			debug_logger.info("INIT: Native quest system ready")
-		end
-	else
-		Write.Info("Using external TaskHUD communication")
-		debug_logger.info("INIT: Using external TaskHUD system")
-		tasks.init()
+	-- Initialize native quest detection system
+	Write.Info("Using native quest detection system")
+	debug_logger.info("INIT: Using native quest system")
+	local success = native_tasks.initialize()
+	if not success then
+		Write.Error("Native quest system initialization failed - cannot continue")
+		debug_logger.error("INIT: Native quest system initialization failed")
+		mq.exit()
 	end
+	Write.Info("Native quest system initialized successfully")
+	debug_logger.info("INIT: Native quest system ready")
 end
 
 local function main()
@@ -217,17 +187,15 @@ local function main()
 			loader.manage(global_settings.subcommands, configuration.types.subcommand)
 
 			looting.handle_master_looting(global_settings)
-			looting.handle_solo_looting(global_settings)
-			looting.handle_personal_loot()
-			
-			-- Process native quest system background tasks (TaskHUD style)
-			if global_settings.settings.use_native_quest_system then
-				native_tasks.process()
-			end
-		end
+		looting.handle_solo_looting(global_settings)
+		looting.handle_personal_loot()
+		
+		-- Process native quest system background tasks
+		native_tasks.process()
+	end
 
-		mq.doevents()
-		mq.delay(global_settings.settings.frequency)
+	mq.doevents()
+	mq.delay(global_settings.settings.frequency)
 	end
 end
 
@@ -240,11 +208,8 @@ local function cleanup()
 	mq.cmd('/dgga /lua stop yalm2/yalm2_native_quest')
 	mq.cmd('/lua stop yalm2/yalm2_native_quest')
 	
-	-- If using native quest system, shutdown collectors
-	if global_settings and global_settings.use_native_quest_system then
-		local native_tasks = require("yalm2.core.native_tasks")
-		native_tasks.shutdown_collectors()
-	end
+	-- Shutdown native quest collectors
+	native_tasks.shutdown_collectors()
 	
 	Write.Info("YALM2 shutdown complete")
 end

@@ -416,7 +416,6 @@ return {
 		["unmatched_item_rule"] = {
 			["setting"] = "Keep",
 		},
-		["use_native_quest_system"] = false,
 		["valuable_item_min_price"] = 100000,
 		["valuable_item_min_stack"] = 1000,
 	},

@@ -14,7 +14,7 @@ local native_tasks = nil
 local quest_database = nil  -- Store database reference passed from caller
 
 --- Initialize the quest interface with the native quest system
-quest_interface.initialize = function(global_settings, external_tasks_module, native_tasks_module, database_ref)
+quest_interface.initialize = function(global_settings, native_tasks_module, database_ref)
     native_tasks = native_tasks_module
     quest_database = database_ref  -- Store the database reference
     

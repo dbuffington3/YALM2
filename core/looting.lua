@@ -3,7 +3,6 @@ local mq = require("mq")
 
 local evaluate = require("yalm2.core.evaluate")
 local inventory = require("yalm2.core.inventory")
-local tasks = require("yalm2.core.tasks")
 local quest_interface = require("yalm2.core.quest_interface")
 
 local dannet = require("yalm2.lib.dannet")
