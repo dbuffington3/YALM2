@@ -177,25 +177,33 @@ end
 local function main()
 	initialize()
 
+	local last_loader_check = mq.gettime()
+	local loader_check_interval = 5000  -- Check for file changes every 5 seconds instead of every frame
+
 	while not state.terminate and mq.TLO.MacroQuest.GameState() == "INGAME" do
 		if not mq.TLO.Me.Dead() then
 			global_settings, char_settings = settings.reload_settings(global_settings, char_settings)
 
-			loader.manage(global_settings.commands, configuration.types.command)
-			loader.manage(global_settings.conditions, configuration.types.condition)
-			loader.manage(global_settings.helpers, configuration.types.helpers)
-			loader.manage(global_settings.subcommands, configuration.types.subcommand)
+			-- Only check for file modifications every 5 seconds, not every frame
+			local current_time = mq.gettime()
+			if current_time - last_loader_check > loader_check_interval then
+				loader.manage(global_settings.commands, configuration.types.command)
+				loader.manage(global_settings.conditions, configuration.types.condition)
+				loader.manage(global_settings.helpers, configuration.types.helpers)
+				loader.manage(global_settings.subcommands, configuration.types.subcommand)
+				last_loader_check = current_time
+			end
 
 			looting.handle_master_looting(global_settings)
-		looting.handle_solo_looting(global_settings)
-		looting.handle_personal_loot()
-		
-		-- Process native quest system background tasks
-		native_tasks.process()
-	end
+			looting.handle_solo_looting(global_settings)
+			looting.handle_personal_loot()
+			
+			-- Process native quest system background tasks
+			native_tasks.process()
+		end
 
-	mq.doevents()
-	mq.delay(global_settings.settings.frequency)
+		mq.doevents()
+		mq.delay(global_settings.settings.frequency)
 	end
 end
 
