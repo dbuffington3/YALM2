@@ -376,6 +376,7 @@ looting.handle_master_looting = function(global_settings)
 	-- QUEST ITEM CHECK: Check if item is questitem=1 (quest item) before any other processing
 	local item_id = item.ID()
 	local is_quest_item = nil -- Initialize quest detection result (will be set by database or legacy detection)
+	local item_db = nil  -- Initialize item database record (will be populated below)
 	debug_logger.info("QUEST_ITEM_CHECK: Starting check for %s, item_id=%s", item_name, tostring(item_id))
 	
 	if not item_id then
@@ -387,7 +388,6 @@ looting.handle_master_looting = function(global_settings)
 	if item_id and item_id > 0 then
 		debug_logger.info("QUEST_ITEM_CHECK: %s has valid ID: %d, attempting database query", item_name, item_id)
 		
-		local item_db = nil
 		local db_success, db_error = pcall(function()
 			item_db = YALM2_Database.QueryDatabaseForItemId(item_id)
 		end)
@@ -447,10 +447,46 @@ looting.handle_master_looting = function(global_settings)
 				end
 			else
 				debug_logger.info("QUEST_DISTRIBUTION: %s not needed by any characters - checking valuable/tradeskill overrides", item_name)
-				-- Will check preference overrides below (valuable_quest_item, tradeskill)
+				
+				-- EARLY SKIP: Check overrides immediately before calling get_member_can_loot
+				-- This prevents the normal loot logic from evaluating quest items we want to skip
+				local has_valuable = false
+				local has_tradeskill = false
+				
+				-- Check if item is valuable based on database price
+				-- Use same logic as evaluate.lua: price >= valuable_item_min_price (default 100000)
+				if item_db then
+					local valuable_min_price = global_settings.settings.valuable_item_min_price or 100000
+					local item_price = item_db.price or 0
+					has_valuable = (item_price >= valuable_min_price)
+					
+					if has_valuable then
+						debug_logger.info("QUEST_DISTRIBUTION: %s is valuable (price=%d >= %d)", item_name, item_price, valuable_min_price)
+					end
+				end
+				
+				-- Also check if it's a tradeskill material
+				if item_db and not has_valuable then
+					has_tradeskill = (item_db.tradeskills == 1)
+					if has_tradeskill then
+						debug_logger.info("QUEST_DISTRIBUTION: %s is tradeskill material (tradeskills=1)", item_name)
+					end
+				end
+				
+				if not (has_valuable or has_tradeskill) then
+					Write.Info("QUEST ITEM SKIPPED: %s - not needed and no valuable/tradeskill override", item_name)
+					debug_logger.info("QUEST_DISTRIBUTION: %s not needed and no overrides - leaving on corpse", item_name)
+					looting.leave_item()
+					return  -- Skip this item entirely, don't fall back to normal processing
+				else
+					debug_logger.info("QUEST_DISTRIBUTION: %s not needed but has override (valuable=%s, tradeskill=%s) - will process normally",
+						item_name, tostring(has_valuable), tostring(has_tradeskill))
+					-- Continue to normal loot processing below
+				end
 			end
 			
-			-- If we get here, no quest distribution occurred but item is still needed, fall through to normal processing
+			-- If we get here with a quest item that has no one needing it,
+			-- it must have valuable_quest_item or tradeskill override, so process normally
 			debug_logger.info("QUEST_DISTRIBUTION: Falling back to normal processing for %s", item_name)
 		end
 	end
@@ -481,27 +517,6 @@ looting.handle_master_looting = function(global_settings)
 		tostring(is_quest_item and not legacy_quest_detection), -- true if database detected but legacy didn't
 		tostring(legacy_quest_detection), 
 		tostring(is_quest_item))
-	
-	-- If quest item and no one needs it, check if it has valuable_quest_item or tradeskill overrides
-	if is_quest_item and not (needed_by and #needed_by > 0) then
-		local has_valuable = false
-		local has_tradeskill = false
-		
-		if preference and preference.data then
-			has_valuable = preference.data.valuable_quest_item or false
-			has_tradeskill = preference.data.tradeskill or false
-		end
-		
-		if not (has_valuable or has_tradeskill) then
-			Write.Info("QUEST ITEM SKIPPED: %s - not needed and no valuable/tradeskill override", item_name)
-			debug_logger.info("QUEST_DISTRIBUTION: %s not needed and no overrides - leaving on corpse", item_name)
-			looting.leave_item()
-			return  -- Skip this item entirely, don't fall back to normal processing
-		else
-			debug_logger.info("QUEST_DISTRIBUTION: %s not needed but has override (valuable_quest_item=%s, tradeskill=%s) - processing normally",
-				item_name, tostring(has_valuable), tostring(has_tradeskill))
-		end
-	end
 	
 	if is_quest_item then
 		debug_logger.debug("Quest item loot check - can_loot: %s, preference: %s, member: %s", 

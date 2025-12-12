@@ -604,6 +604,31 @@ tasks.extract_quest_item_name = function(objective_text)
     -- Also handle "from..." suffixes that specify mob sources
     -- Note: "from" can be followed by "the", "a", or directly by mob names
     
+    -- POSSESSIVE PATTERNS: "Loot/Collect the X's Y" format
+    -- Extract the WHOLE possessive phrase "X's Y" so fuzzy matching can work with it
+    -- Example: "Loot the bone golem's bones" → "bone golem's bones" (fuzzy matching cleans it up)
+    if not item_name then
+        item_name = objective_text:match("Loot the (.+['''].+)")
+        if item_name then 
+            Write.Debug("Pattern 'Loot the (.+['''].+)' matched: '%s'", item_name) 
+            debug_logger.debug("POSSESSIVE_PATTERN: Extracted possessive phrase '%s'", item_name)
+        end
+    end
+    if not item_name then
+        item_name = objective_text:match("Collect the (.+['''].+)")
+        if item_name then 
+            Write.Debug("Pattern 'Collect the (.+['''].+)' matched: '%s'", item_name)
+            debug_logger.debug("POSSESSIVE_PATTERN: Extracted possessive phrase '%s'", item_name)
+        end
+    end
+    if not item_name then
+        item_name = objective_text:match("Gather the (.+['''].+)")
+        if item_name then 
+            Write.Debug("Pattern 'Gather the (.+['''].+)' matched: '%s'", item_name)
+            debug_logger.debug("POSSESSIVE_PATTERN: Extracted possessive phrase '%s'", item_name)
+        end
+    end
+    
     -- Loot patterns with "from" suffix (most specific first)
     if not item_name then
         item_name = objective_text:match("Loot %d+ (.+) from")
@@ -721,26 +746,67 @@ end
 
 -- Check if an item is needed by any character for quests
 tasks.is_quest_item = function(item_name)
-    return task_data.quest_items[item_name] ~= nil
+    if not item_name or item_name == "" then
+        return false
+    end
+    
+    -- First try exact match (fast path)
+    if task_data.quest_items[item_name] then
+        return true
+    end
+    
+    -- If no exact match, try fuzzy matching against all quest items in the table
+    -- This handles cases where we extract "bones" but the table has "Golem Bones"
+    local item_lower = item_name:lower()
+    for quest_item_name, _ in pairs(task_data.quest_items) do
+        local quest_item_lower = quest_item_name:lower()
+        
+        -- Check if extracted name is contained in the quest item name
+        -- "bones" matches "Golem Bones"
+        if quest_item_lower:find(item_lower, 1, true) then
+            debug_logger.debug("QUEST_ITEM_FUZZY_MATCH: '%s' matches '%s'", item_name, quest_item_name)
+            return true
+        end
+    end
+    
+    debug_logger.debug("NO_QUEST_ITEM_MATCH: '%s' not found in quest items", item_name)
+    return false
 end
 
 -- Get characters who need a specific quest item
 tasks.get_characters_needing_item = function(item_name)
     debug_logger.debug("GET_CHARACTERS_NEEDING: Checking for item '%s'", item_name)
     
+    -- First try exact match
     local quest_info = task_data.quest_items[item_name]
-    local history_info = task_data.quest_history[item_name]
+    local matched_name = item_name
+    
+    -- If no exact match, try fuzzy matching
+    if not quest_info then
+        local item_lower = item_name:lower()
+        for quest_item_name, info in pairs(task_data.quest_items) do
+            local quest_item_lower = quest_item_name:lower()
+            if quest_item_lower:find(item_lower, 1, true) then
+                quest_info = info
+                matched_name = quest_item_name
+                debug_logger.debug("GET_CHARACTERS_NEEDING: Fuzzy matched '%s' to '%s'", item_name, quest_item_name)
+                break
+            end
+        end
+    end
+    
+    local history_info = task_data.quest_history[matched_name]
     
     if quest_info then
         -- Current data shows someone needs it
         debug_logger.quest("QUEST_INFO_FOUND: %s needed by [%s] for task '%s' - objective: %s", 
-            item_name, 
+            matched_name, 
             quest_info.needed_by and table.concat(quest_info.needed_by, ", ") or "none",
             quest_info.task_name or "Unknown",
             quest_info.objective or "Unknown")
         
         -- Update history with current data
-        task_data.quest_history[item_name] = {
+        task_data.quest_history[matched_name] = {
             last_needed_by = quest_info.needed_by or {},
             last_seen = os.time(),
             confidence = "high"

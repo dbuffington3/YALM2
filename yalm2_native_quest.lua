@@ -66,6 +66,7 @@ local ImGui = require('ImGui')
 local Write = require("yalm2.lib.Write")
 local quest_data_store = require("yalm2.lib.quest_data_store")
 local quest_db = require("yalm2.lib.quest_database")
+local quest_interface = require("yalm2.core.quest_interface")
 
 -- Fix the Write prefix to show YALM2 instead of YALM (due to module caching from older YALM system)
 Write.prefix = "\at[\ax\apYALM2\ax\at]\ax"
@@ -78,6 +79,9 @@ if not YALM2_Database.database then
     Write.Error("Failed to open database")
     mq.exit()
 end
+
+-- Initialize quest_interface with the database reference
+quest_interface.initialize(nil, nil, nil, YALM2_Database)
 
 -- Arguments passed when starting the script  
 local args = { ... }
@@ -118,15 +122,23 @@ local function extract_quest_item_from_objective(objective_text)
         return nil 
     end
     
-    -- Pattern to extract item names from gather objectives with proper case preservation
+    -- Pattern to extract item names from gather objectives
+    -- For possessive patterns like "Loot the bone golem's bones", we want to extract
+    -- the WHOLE possessive phrase "bone golem's bones" so fuzzy matching can work with it
     local patterns = {
+        -- Possessive patterns: Extract the whole "X's Y" phrase including the possessive
+        -- "Loot the bone golem's bones" → "bone golem's bones" (let fuzzy matching handle cleanup)
+        "Loot the (.+['''].+)",            -- "Loot the bone golem's bones"
+        "Collect the (.+['''].+)",         -- "Collect the X's Y"
+        "Gather the (.+['''].+)",          -- "Gather the X's Y"
+        
         "Gather some (.+) from",           -- "Gather some Orbweaver Silks from the orbweaver spiders"
         "Collect %d* ?(.+) from",          -- "Collect 5 Bone Fragments from skeletons"
         "Gather (.+) from",                -- "Gather Werewolf Pelts from wolves" 
         "Collect (.+) %- %d+/%d+",         -- "Collect Bone Fragments - 2/5"
     }
     
-    for _, pattern in ipairs(patterns) do
+    for idx, pattern in ipairs(patterns) do
         local match = objective_text:match(pattern)
         if match then
             -- Clean up the match - remove extra descriptors but preserve proper case
@@ -839,53 +851,37 @@ local function refresh_character_after_loot(character_name, item_name)
                     local item_name_extracted = extract_quest_item_from_objective(objective.objective)
                     
                     if item_name_extracted then
-                        -- Validate against database
+                        Write.Debug("[CHAR_REFRESH] Extracted item name from objective: '%s' from text: '%s'", item_name_extracted, objective.objective)
+                        
+                        -- Validate against database using fuzzy matching
                         if not YALM2_Database.database then
                             Write.Debug("[CHAR_REFRESH] Database not available")
                             return
                         end
                         
-                        local db_item = nil
-                        local search_variations = { item_name_extracted }
+                        -- Use the fuzzy matching function to find the canonical item name
+                        local matched_item_name = quest_interface.find_matching_quest_item(item_name_extracted)
                         
-                        -- Try removing trailing 's'
-                        if item_name_extracted:match('s$') then
-                            table.insert(search_variations, item_name_extracted:sub(1, -2))
-                        end
-                        
-                        -- Try removing trailing 'es'
-                        if item_name_extracted:match('es$') then
-                            table.insert(search_variations, item_name_extracted:sub(1, -3))
-                        end
-                        
-                        -- Query variations
-                        for _, search_term in ipairs(search_variations) do
-                            if db_item then break end
-                            
-                            local escaped = search_term:gsub("'", "''")
-                            local query = string.format("SELECT * FROM raw_item_data WHERE name = '%s' LIMIT 1", escaped)
-                            for row in YALM2_Database.database:nrows(query) do
-                                db_item = row
-                                break
-                            end
-                        end
-                        
-                        if db_item and db_item.questitem == 1 then
-                            local canonical_item_name = db_item.name
-                            
-                            if not quest_items[canonical_item_name] then
-                                quest_items[canonical_item_name] = {}
+                        if matched_item_name then
+                            if not quest_items[matched_item_name] then
+                                quest_items[matched_item_name] = {}
                             end
                             
-                            table.insert(quest_items[canonical_item_name], {
+                            table.insert(quest_items[matched_item_name], {
                                 character = character_name,
                                 task_name = task.task_name,
                                 objective = objective.objective,
                                 status = objective.status
                             })
                             
-                            Write.Debug("[CHAR_REFRESH] Found quest item for %s: %s (status: %s)", character_name, canonical_item_name, objective.status)
+                            Write.Debug("[CHAR_REFRESH] Found quest item for %s: '%s' (from extracted: '%s', status: %s)", 
+                                character_name, matched_item_name, item_name_extracted, objective.status)
+                        else
+                            Write.Debug("[CHAR_REFRESH] No matching quest item found in database for extracted: '%s' (objective: '%s')", 
+                                item_name_extracted, objective.objective)
                         end
+                    else
+                        Write.Debug("[CHAR_REFRESH] Could not extract item name from objective: '%s'", objective.objective)
                     end
                 end
             end
@@ -987,54 +983,24 @@ local function manual_refresh_with_messages(show_messages)
                             local item_name = extract_quest_item_from_objective(objective.objective)
                             
                             if item_name then
-                                Write.Debug("MANUAL_REFRESH: Extracted potential item: '%s'", item_name)
-                                -- Validate against database to ensure it's a real item
-                                if not YALM2_Database.database then
+                                -- Validate against database using fuzzy matching
+                                if not YALM2_Database or not YALM2_Database.database then
                                     Write.Error("Database not available for item validation")
                                     return
-                                end                            -- Inline database query - look up item in database with fuzzy matching
-                            local db_item = nil
-                            local search_variations = { item_name }
-                            
-                            -- Try removing trailing 's' for common plurals
-                            if item_name:match('s$') then
-                                table.insert(search_variations, item_name:sub(1, -2))
-                            end
-                            
-                            -- Try removing trailing 'es'
-                            if item_name:match('es$') then
-                                table.insert(search_variations, item_name:sub(1, -3))
-                            end
-                            
-                            -- Query variations
-                            for idx, search_term in ipairs(search_variations) do
-                                if db_item then break end
-                                
-                                local escaped = search_term:gsub("'", "''")
-                                
-                                local query = string.format("SELECT * FROM raw_item_data WHERE name = '%s' LIMIT 1", escaped)
-                                for row in YALM2_Database.database:nrows(query) do
-                                    db_item = row
-                                    break
                                 end
-                            end
-                            
-                            local success = (db_item ~= nil)
-                            
-                            if db_item then
-                                if db_item.questitem == 1 then
-                                    Write.Debug("MANUAL_REFRESH: Confirmed quest item in database: '%s'", db_item.name)
-                                    
-                                    -- Use the canonical item name from database, not the extracted/fuzzy-matched name
-                                    local canonical_item_name = db_item.name
+                                
+                                -- Use the fuzzy matching function to find the canonical item name
+                                local matched_item_name = quest_interface.find_matching_quest_item(item_name)
+                                
+                                if matched_item_name then
                                     
                                     -- Add to quest items if not already added for this character
-                                    if not quest_items[canonical_item_name] then
-                                        quest_items[canonical_item_name] = {}
+                                    if not quest_items[matched_item_name] then
+                                        quest_items[matched_item_name] = {}
                                     end
                                     
                                     local already_added = false
-                                    for _, existing in ipairs(quest_items[canonical_item_name]) do
+                                    for _, existing in ipairs(quest_items[matched_item_name]) do
                                         if existing.character == character_name then
                                             already_added = true
                                             break
@@ -1042,7 +1008,7 @@ local function manual_refresh_with_messages(show_messages)
                                     end
                                     
                                     if not already_added then
-                                        table.insert(quest_items[canonical_item_name], {
+                                        table.insert(quest_items[matched_item_name], {
                                             character = character_name,
                                             task_name = task.task_name,  -- CRITICAL: Use task.task_name NOT task.name
                                             objective = objective.objective,  -- CRITICAL: Use objective.objective NOT objective.text
@@ -1050,11 +1016,8 @@ local function manual_refresh_with_messages(show_messages)
                                         })
                                     end
                                 else
-                                    Write.Debug("MANUAL_REFRESH: '%s' is not a quest item", db_item.name)
+                                    Write.Debug("MANUAL_REFRESH: No matching quest item found for extracted: '%s'", item_name)
                                 end
-                            else
-                                Write.Debug("MANUAL_REFRESH: '%s' not found in database", item_name)
-                            end
                         else
                             Write.Debug("MANUAL_REFRESH: No quest item found in objective")
                         end
@@ -1259,41 +1222,23 @@ local function main()
                         local item_name = extract_quest_item_from_objective(objective.objective)
                         
                         if item_name then
-                            -- Validate against database (same as manual refresh but silent)
+                            -- Validate against database using fuzzy matching (silent operation - no debug)
                             if not YALM2_Database.database then
                                 -- Skip validation if database not available
                                 break
                             end
                             
-                            -- Inline database query
-                            local db_item = nil
-                            local search_variations = { item_name }
-                            if item_name:match('s$') then
-                                table.insert(search_variations, item_name:sub(1, -2))
-                            end
-                            if item_name:match('es$') then
-                                table.insert(search_variations, item_name:sub(1, -3))
-                            end
+                            -- Use the fuzzy matching function to find the canonical item name
+                            local matched_item_name = quest_interface.find_matching_quest_item(item_name)
                             
-                            for _, search_term in ipairs(search_variations) do
-                                if db_item then break end
-                                local escaped = search_term:gsub("'", "''")
-                                
-                                local query = string.format("SELECT * FROM raw_item_data WHERE name = '%s' LIMIT 1", escaped)
-                                for row in YALM2_Database.database:nrows(query) do
-                                    db_item = row
-                                    break
-                                end
-                            end
-                            
-                            if db_item and db_item.questitem == 1 then
+                            if matched_item_name then
                                 -- Add to quest items (same logic as manual refresh)
-                                if not quest_items[item_name] then
-                                    quest_items[item_name] = {}
+                                if not quest_items[matched_item_name] then
+                                    quest_items[matched_item_name] = {}
                                 end
                                 
                                 local already_added = false
-                                for _, existing in ipairs(quest_items[item_name]) do
+                                for _, existing in ipairs(quest_items[matched_item_name]) do
                                     if existing.character == character_name then
                                         already_added = true
                                         break
@@ -1301,7 +1246,7 @@ local function main()
                                 end
                                 
                                 if not already_added then
-                                    table.insert(quest_items[item_name], {
+                                    table.insert(quest_items[matched_item_name], {
                                         task_name = task.task_name,      -- CRITICAL: task_name field
                                         objective = objective.objective, -- CRITICAL: objective field  
                                         status = objective.status,

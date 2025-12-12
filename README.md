@@ -5,6 +5,27 @@ YALM2 - Yet Another Loot Manager with TaskHUD Integration
 
 YALM2 is an advanced EverQuest loot distribution system that integrates with features and logic from the original TaskHUD to provide intelligent, quest-aware item distribution for group play. The system automatically detects which group members need quest items and distributes them accordingly, with real-time UI updates and persistent tracking.
 
+## Requirements
+
+### Required MQ2 Plugins
+YALM2 requires the **MQ2LinkDB** plugin to be loaded. This is part of the standard RedGuides MacroQuest distribution.
+
+**To load MQ2LinkDB:**
+1. In-game, run: `/plugin mq2linkdb load`
+2. To make it persistent across sessions, add to your macro or login sequence
+
+**If you don't have MQ2LinkDB:**
+1. Ensure you're using the latest MacroQuest from [RedGuides](https://redguides.com)
+2. The plugin is included in the standard distribution
+3. It provides access to the item database for quest item validation
+
+### Database Files
+The repository includes pre-populated database files. Copy these to your MQ2 resources directory:
+- `MQ2LinkDB.db` → `C:\MQ2\resources\MQ2LinkDB.db`
+- `MQ2LinkDB.db-wal` → `C:\MQ2\resources\MQ2LinkDB.db-wal`
+
+See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed installation instructions.
+
 ## Why Was This Necessary
 Well, because I am lazy and while I am a CLI fan in my day job, my secret passion is automation.  I hate taking something I can visually see and then having to type it in somewhere else.  I especially hate typo's which I am prone to, so I decided to use this as a learning project to teach myself a little lua, work more with AI agents, and just have some fun in the process.  I hated having to get the quests, figure out what they needed and then update lootly to keep X of those items.  I hated it even more when I could see on my screen how many I had, and how many each character still needed.  So, having searched around found nothing that met my specific needs, I decided to start this monster.
 
