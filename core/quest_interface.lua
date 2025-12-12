@@ -228,6 +228,8 @@ quest_interface.find_matching_quest_item = function(partial_item_name)
     cleaned = cleaned:gsub("^collect ", "", 1)
     cleaned = cleaned:gsub("^gather ", "", 1)
     cleaned = cleaned:gsub("^the ", "", 1)
+    -- Remove all numeric characters (quest objectives often have "loot 3 pieces" type phrasing)
+    cleaned = cleaned:gsub("%d+", " ")
     -- Collapse multiple spaces
     cleaned = cleaned:gsub("%s+", " ")
     -- Trim
@@ -242,6 +244,21 @@ quest_interface.find_matching_quest_item = function(partial_item_name)
     local words = {}
     for word in cleaned:gmatch("[^%s]+") do
         table.insert(words, word)
+    end
+    
+    -- Define common words that should be filtered out
+    local common_words_set = {
+        of=true, the=true, a=true, an=true, from=true, to=true, in_=true, on=true, at=true, by=true, 
+        for_=true, with=true, and_=true, or_=true, piece=true, pieces=true, bit=true, part=true, 
+        item=true, thing=true, stuff=true, material=true, sample=true
+    }
+    
+    -- Filter out common words from the words array (these will be used for scoring later)
+    local filtered_words = {}
+    for _, word in ipairs(words) do
+        if not common_words_set[word:lower()] then
+            table.insert(filtered_words, word)
+        end
     end
     
     -- Add all word combinations (from both directions)
@@ -285,23 +302,86 @@ quest_interface.find_matching_quest_item = function(partial_item_name)
         end
     end
     
-    -- Strategy 2: Fuzzy/contains match - look for items containing key words
-    -- Try searching for combinations of words (LIKE searches)
+    -- Strategy 2: Fuzzy/contains match with smart scoring
+    -- Collect all matching items and score them by relevance
+    local all_matches = {}
+    
     for _, search_term in ipairs(unique_terms) do
-        if search_term and search_term ~= "" then
-            local query = string.format("SELECT * FROM raw_item_data WHERE LOWER(name) LIKE LOWER('%%%s%%') AND questitem = 1 LIMIT 10", 
-                search_term:gsub("'", "''"))
-            local matches = {}
-            for row in YALM2_Database.database:nrows(query) do
-                table.insert(matches, row.name)
+        if search_term and search_term ~= "" and search_term:len() > 2 then
+            -- Skip single common words that are too generic
+            local common_words = {
+                "of", "the", "a", "an", "from", "to", "in", "on", "at", "by", "for", "with", "and", "or",
+                "piece", "pieces", "bit", "part", "item", "thing", "stuff", "material", "sample"
+            }
+            
+            local is_common = false
+            for _, common in ipairs(common_words) do
+                if search_term:lower() == common then
+                    is_common = true
+                    break
+                end
             end
             
-            if #matches > 0 then
-                Write.Info("ITEM_MATCH: Found %d quest item fuzzy matches for '%s' (search: '%s'), returning top match: '%s'", 
-                    #matches, partial_item_name, search_term, matches[1])
-                debug_logger.debug("ITEM_MATCH: All fuzzy matches for '%s': %s", search_term, table.concat(matches, ", "))
-                return matches[1]
+            if not is_common then
+                local query = string.format("SELECT * FROM raw_item_data WHERE LOWER(name) LIKE LOWER('%%%s%%') AND questitem = 1", 
+                    search_term:gsub("'", "''"))
+                
+                for row in YALM2_Database.database:nrows(query) do
+                    local item_name = row.name
+                    -- Calculate relevance score
+                    -- Higher score for longer search terms (more specific)
+                    -- Higher score if the item name starts or ends with search term
+                    local score = search_term:len()
+                    
+                    if item_name:lower():find("^" .. search_term:lower()) then
+                        score = score + 100  -- Bonus for matching at start
+                    elseif item_name:lower():find(search_term:lower() .. "$") then
+                        score = score + 50   -- Bonus for matching at end
+                    end
+                    
+                    -- Count how many words from the filtered search are in this item
+                    local matching_words = 0
+                    for _, word in ipairs(filtered_words) do
+                        if item_name:lower():find(word:lower(), 1, true) then
+                            matching_words = matching_words + 1
+                        end
+                    end
+                    score = score + (matching_words * 20)
+                    
+                    -- Penalty: if the item name is much longer than the search, it might be a false match
+                    local name_words = 0
+                    for _ in item_name:gmatch("%S+") do
+                        name_words = name_words + 1
+                    end
+                    if name_words > (#filtered_words * 2) then
+                        score = score - 50  -- Less likely to be right match
+                    end
+                    
+                    if not all_matches[item_name] or all_matches[item_name].score < score then
+                        all_matches[item_name] = { score = score, search_term = search_term }
+                    end
+                end
             end
+        end
+    end
+    
+    -- Sort matches by score (descending)
+    if next(all_matches) then
+        local sorted_matches = {}
+        for item_name, data in pairs(all_matches) do
+            table.insert(sorted_matches, { name = item_name, score = data.score, search_term = data.search_term })
+        end
+        
+        table.sort(sorted_matches, function(a, b) return a.score > b.score end)
+        
+        if #sorted_matches > 0 then
+            local best_match = sorted_matches[1]
+            Write.Info("ITEM_MATCH: Found %d fuzzy matches for '%s', returning best match: '%s' (score: %.1f, search: '%s')", 
+                #sorted_matches, partial_item_name, best_match.name, best_match.score, best_match.search_term)
+            debug_logger.debug("ITEM_MATCH: Top 5 matches for '%s': %s", partial_item_name, 
+                table.concat({sorted_matches[1].name, sorted_matches[2] and sorted_matches[2].name or "", 
+                             sorted_matches[3] and sorted_matches[3].name or ""}, " | "))
+            return best_match.name
         end
     end
     
