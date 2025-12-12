@@ -869,8 +869,15 @@ local function refresh_character_after_loot(character_name, item_name)
                             return
                         end
                         
-                        -- Use the fuzzy matching function to find the canonical item name
-                        local matched_item_name = quest_interface.find_matching_quest_item(item_name_extracted)
+                        -- Check cache first, then call fuzzy matching if needed
+                        local matched_item_name = fuzzy_match_cache[item_name_extracted]
+                        if matched_item_name == nil then
+                            matched_item_name = quest_interface.find_matching_quest_item(item_name_extracted)
+                            fuzzy_match_cache[item_name_extracted] = matched_item_name or false
+                        end
+                        if matched_item_name == false then
+                            matched_item_name = nil
+                        end
                         
                         if matched_item_name then
                             if not quest_items[matched_item_name] then
@@ -999,8 +1006,15 @@ local function manual_refresh_with_messages(show_messages)
                                     return
                                 end
                                 
-                                -- Use the fuzzy matching function to find the canonical item name
-                                local matched_item_name = quest_interface.find_matching_quest_item(item_name)
+                                -- Check cache first, then call fuzzy matching if needed
+                                local matched_item_name = fuzzy_match_cache[item_name]
+                                if matched_item_name == nil then
+                                    matched_item_name = quest_interface.find_matching_quest_item(item_name)
+                                    fuzzy_match_cache[item_name] = matched_item_name or false
+                                end
+                                if matched_item_name == false then
+                                    matched_item_name = nil
+                                end
                                 
                                 if matched_item_name then
                                     
