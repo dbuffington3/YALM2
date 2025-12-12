@@ -234,6 +234,51 @@ function quest_db.get_all_quest_items()
     return result
 end
 
+--- Get all quest items with enriched data from quest_objectives
+--- Joins quest_tasks (status data) with quest_objectives (objective text) for enhanced UI display
+--- @return table - Enhanced quest_items {item_name = {character, status, objective}, ...}
+function quest_db.get_all_quest_items_with_objectives()
+    local db = get_db()
+    if not db then
+        return {}
+    end
+    
+    local result = {}
+    -- Join quest_tasks with quest_objectives to get both status and objective text
+    -- This gives us complete information for the UI to display
+    local query = [[
+        SELECT DISTINCT 
+            qt.item_name, 
+            qt.character, 
+            qt.status,
+            qo.objective
+        FROM quest_tasks qt
+        LEFT JOIN quest_objectives qo ON qt.item_name = qo.item_name
+        WHERE qt.item_name IS NOT NULL AND qt.status NOT LIKE 'Done'
+        ORDER BY qt.item_name, qt.character
+    ]]
+    
+    local stmt = db:prepare(query)
+    if stmt then
+        while stmt:step() == sql.ROW do
+            local item = stmt:get_value(0)
+            if item and item ~= "" then
+                if not result[item] then
+                    result[item] = {}
+                end
+                table.insert(result[item], {
+                    character = stmt:get_value(1),
+                    status = stmt:get_value(2),
+                    objective = stmt:get_value(3)  -- Can be nil if objective not cached yet
+                })
+            end
+        end
+        stmt:finalize()
+    end
+    
+    return result
+end
+
 --- Update a character's task status after giving them loot
 --- Called by looting.lua after distributing an item
 --- @param character_name string - Character name

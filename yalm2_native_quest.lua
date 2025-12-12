@@ -426,8 +426,8 @@ local function display_database_table()
         return
     end
     
-    -- Get all quest items from database
-    local quest_items = quest_db.get_all_quest_items()
+    -- Get all quest items with enriched objective data from database
+    local quest_items = quest_db.get_all_quest_items_with_objectives()
     
     if not quest_items or not next(quest_items) then
         ImGui.TextColored(1, 1, 0, 1, "Database is empty")
@@ -435,11 +435,13 @@ local function display_database_table()
         return
     end
     
-    -- Create a table showing all items and who needs them
-    if ImGui.BeginTable('##DatabaseTable', 3, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.RowBg, ImGuiTableFlags.Resizable)) then
+    -- Create a table showing all items, objectives, and who needs them
+    -- Enhanced to show objective text from cached quest_objectives table
+    if ImGui.BeginTable('##DatabaseTable', 4, bit32.bor(ImGuiTableFlags.Borders, ImGuiTableFlags.RowBg, ImGuiTableFlags.Resizable)) then
         ImGui.TableSetupColumn("Item Name", ImGuiTableColumnFlags.WidthStretch)
-        ImGui.TableSetupColumn("Character", ImGuiTableColumnFlags.WidthFixed, 120)
-        ImGui.TableSetupColumn("Status", ImGuiTableColumnFlags.WidthFixed, 100)
+        ImGui.TableSetupColumn("Objective", ImGuiTableColumnFlags.WidthStretch)
+        ImGui.TableSetupColumn("Character", ImGuiTableColumnFlags.WidthFixed, 100)
+        ImGui.TableSetupColumn("Status", ImGuiTableColumnFlags.WidthFixed, 80)
         ImGui.TableHeadersRow()
         
         local item_count = 0
@@ -456,6 +458,21 @@ local function display_database_table()
                 ImGui.TableNextColumn()
                 if i == 1 then
                     ImGui.Text(item_name)
+                end
+                
+                -- Objective Text (only show for first entry of each item)
+                ImGui.TableNextColumn()
+                if i == 1 then
+                    if char_info.objective and char_info.objective ~= "" then
+                        -- Truncate long objectives for UI display
+                        local display_obj = char_info.objective
+                        if #display_obj > 50 then
+                            display_obj = display_obj:sub(1, 47) .. "..."
+                        end
+                        ImGui.TextWrapped(display_obj)
+                    else
+                        ImGui.TextColored(0.7, 0.7, 0.7, 1, "(objective not cached yet)")
+                    end
                 end
                 
                 -- Character Name
@@ -481,6 +498,7 @@ local function display_database_table()
         -- Show statistics
         ImGui.Separator()
         ImGui.Text(string.format("Items: %d | Total Needs: %d", item_count, total_entries))
+        ImGui.Text("Objectives shown only if cached. Run refresh to cache new objectives.")
     end
 end
 
