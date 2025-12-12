@@ -107,6 +107,10 @@ local triggers = {
     last_data_send = 0
 }
 
+-- Cache for fuzzy match results to avoid repeated database lookups
+-- Maps extracted item name -> matched item name (prevents repeated fuzzy matching)
+local fuzzy_match_cache = {}
+
 -- UI view mode (0 = Task view, 1 = Database view)
 local ui_view_mode = 0
 
@@ -133,7 +137,8 @@ local function extract_quest_item_from_objective(objective_text)
         "Gather the (.+['''].+)",          -- "Gather the X's Y"
         
         "Gather some (.+) from",           -- "Gather some Orbweaver Silks from the orbweaver spiders"
-        "Collect %d* ?(.+) from",          -- "Collect 5 Bone Fragments from skeletons"
+        "Collect %d+ ?(.+) from",          -- "Collect 5 Bone Fragments from skeletons"
+        "Loot %d+ ?(.+) from",             -- "Loot 4 antheia bloom seeds from the rotdogs"
         "Gather (.+) from",                -- "Gather Werewolf Pelts from wolves" 
         "Collect (.+) %- %d+/%d+",         -- "Collect Bone Fragments - 2/5"
     }
@@ -143,6 +148,9 @@ local function extract_quest_item_from_objective(objective_text)
         if match then
             -- Clean up the match - remove extra descriptors but preserve proper case
             local cleaned = match
+            
+            -- Remove leading quantity numbers (e.g., "4 antheia bloom seeds" → "antheia bloom seeds")
+            cleaned = cleaned:gsub("^%d+ ", "")
             
             -- Remove quality descriptors while preserving actual item name case
             cleaned = cleaned:gsub("^quality ", "")
@@ -321,6 +329,8 @@ end)
 
 local function request_task_update()
     actor:send({ id = 'REQUEST_TASKS' })
+    -- Clear the fuzzy match cache when refreshing to ensure fresh lookups
+    fuzzy_match_cache = {}
     -- Also trigger quest data sharing after refresh completes
     mq.delay(5000)  -- Wait for all characters to respond
     triggers.need_yalm2_data_send = true
@@ -1228,8 +1238,19 @@ local function main()
                                 break
                             end
                             
-                            -- Use the fuzzy matching function to find the canonical item name
-                            local matched_item_name = quest_interface.find_matching_quest_item(item_name)
+                            -- Check fuzzy match cache first to avoid repeated lookups
+                            local matched_item_name = fuzzy_match_cache[item_name]
+                            
+                            -- If not in cache, perform fuzzy matching and cache the result
+                            if matched_item_name == nil then
+                                matched_item_name = quest_interface.find_matching_quest_item(item_name)
+                                fuzzy_match_cache[item_name] = matched_item_name or false  -- Cache nil results as false
+                            end
+                            
+                            -- If cached result was false, skip it
+                            if matched_item_name == false then
+                                matched_item_name = nil
+                            end
                             
                             if matched_item_name then
                                 -- Add to quest items (same logic as manual refresh)
