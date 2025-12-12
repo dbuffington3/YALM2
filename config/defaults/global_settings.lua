@@ -99,6 +99,13 @@ return {
 			["help"] = "Set loot preference for item on cursor or by name",
 			["category"] = "Item",
 		},
+		["ArmorProgressionSetup"] = {
+			["args"] = "",
+			["name"] = "ArmorProgressionSetup",
+			["trigger"] = "armorprogressionsetup",
+			["help"] = "Configure 530 armor craft components globally for all characters",
+			["category"] = "Configuration",
+		},
 		["Settings"] = {
 			["name"] = "Settings",
 			["trigger"] = "setting",
