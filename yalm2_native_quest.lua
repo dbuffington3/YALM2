@@ -864,13 +864,21 @@ local function refresh_character_after_loot(character_name, item_name)
                         end
                         
                         -- OPTIMIZATION: Check if we've already matched this objective
-                        local matched_item_name = quest_db.get_cached_item_match(character_name, objective.objective)
+                        -- First check quest_objectives table (static cache of matched items)
+                        local objective_data = quest_db.get_objective(objective.objective)
+                        local matched_item_name = nil
                         
-                        -- If not cached, perform fuzzy matching and store the result
-                        if not matched_item_name then
+                        if objective_data and objective_data.item_name then
+                            -- Already matched before - use the cached result
+                            matched_item_name = objective_data.item_name
+                            Write.Debug("[CHAR_REFRESH] Using cached match for objective: '%s' -> '%s'", objective.objective, matched_item_name)
+                        else
+                            -- New objective - perform fuzzy matching once and cache it
                             matched_item_name = quest_interface.find_matching_quest_item(item_name_extracted)
                             if matched_item_name then
-                                quest_db.store_matched_item(character_name, task.task_name, objective.objective, matched_item_name)
+                                -- Store in quest_objectives for future lookups
+                                quest_db.store_objective(objective.objective, task.task_name, matched_item_name)
+                                Write.Debug("[CHAR_REFRESH] Cached new objective match: '%s' -> '%s'", objective.objective, matched_item_name)
                             end
                         end
                         
@@ -1002,13 +1010,19 @@ local function manual_refresh_with_messages(show_messages)
                                 end
                                 
                                 -- OPTIMIZATION: Check if we've already matched this objective
-                                local matched_item_name = quest_db.get_cached_item_match(my_name, objective.objective)
+                                -- First check quest_objectives table (static cache of matched items)
+                                local objective_data = quest_db.get_objective(objective.objective)
+                                local matched_item_name = nil
                                 
-                                -- If not cached, perform fuzzy matching and store the result
-                                if not matched_item_name then
+                                if objective_data and objective_data.item_name then
+                                    -- Already matched before - use the cached result
+                                    matched_item_name = objective_data.item_name
+                                else
+                                    -- New objective - perform fuzzy matching once and cache it
                                     matched_item_name = quest_interface.find_matching_quest_item(item_name)
                                     if matched_item_name then
-                                        quest_db.store_matched_item(my_name, task.task_name, objective.objective, matched_item_name)
+                                        -- Store in quest_objectives for future lookups
+                                        quest_db.store_objective(objective.objective, task.task_name, matched_item_name)
                                     end
                                 end
                                 
@@ -1248,16 +1262,20 @@ local function main()
                                 break
                             end
                             
-                            -- OPTIMIZATION: Check if we've already matched this objective to an item
-                            -- This avoids repeated fuzzy matching for the same objectives
-                            local matched_item_name = quest_db.get_cached_item_match(character_name, objective.objective)
+                            -- OPTIMIZATION: Check if we've already matched this objective
+                            -- First check quest_objectives table (static cache of matched items)
+                            local objective_data = quest_db.get_objective(objective.objective)
+                            local matched_item_name = nil
                             
-                            -- If not cached, perform fuzzy matching and store the result
-                            if not matched_item_name then
+                            if objective_data and objective_data.item_name then
+                                -- Already matched before - use the cached result (NO fuzzy matching!)
+                                matched_item_name = objective_data.item_name
+                            else
+                                -- New objective - perform fuzzy matching once and cache it
                                 matched_item_name = quest_interface.find_matching_quest_item(item_name)
                                 if matched_item_name then
-                                    -- Cache the result in the database for future refreshes
-                                    quest_db.store_matched_item(character_name, task.task_name, objective.objective, matched_item_name)
+                                    -- Store in quest_objectives for future lookups
+                                    quest_db.store_objective(objective.objective, task.task_name, matched_item_name)
                                 end
                             end
                             
