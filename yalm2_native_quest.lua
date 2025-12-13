@@ -516,6 +516,108 @@ local function display_database_table()
     end
 end
 
+-- Helper function to build failed objectives list for combo display
+local function update_failed_objectives_list()
+    failed_objectives_list = {}
+    for objective_text, _ in pairs(failed_objectives) do
+        table.insert(failed_objectives_list, objective_text)
+    end
+    if selected_failed_objective > #failed_objectives_list then
+        selected_failed_objective = 1
+    end
+end
+
+-- Display the failed objectives view with manual retry capability
+local function display_failed_objectives_view()
+    if not next(failed_objectives) then
+        ImGui.TextColored(0, 1, 0, 1, "✓ All objectives matched!")
+        ImGui.Text("")
+        ImGui.Text("When an objective can't be automatically matched,")
+        ImGui.Text("it will appear here for manual resolution.")
+        return
+    end
+    
+    ImGui.TextColored(1, 0, 0, 1, string.format("⚠ %d objectives failed to match", #failed_objectives_list))
+    ImGui.Text("")
+    ImGui.Separator()
+    
+    -- Select which failed objective to work on
+    ImGui.Text("Failed Objective:")
+    ImGui.PushItemWidth(400)
+    if #failed_objectives_list > 0 then
+        selected_failed_objective = ImGui.Combo('##FailedObjectiveCombo', selected_failed_objective, failed_objectives_list, #failed_objectives_list)
+    end
+    ImGui.PopItemWidth()
+    
+    ImGui.Separator()
+    
+    -- Show details for selected objective
+    if #failed_objectives_list > 0 then
+        local selected_objective = failed_objectives_list[selected_failed_objective]
+        local objective_data = failed_objectives[selected_objective]
+        
+        if selected_objective and objective_data then
+            ImGui.TextColored(1, 1, 0, 1, "Objective:")
+            ImGui.TextWrapped(selected_objective)
+            
+            ImGui.Separator()
+            
+            ImGui.TextColored(0.8, 0.8, 1, 1, "Keywords found:")
+            if objective_data.filtered_words and #objective_data.filtered_words > 0 then
+                ImGui.TextWrapped(table.concat(objective_data.filtered_words, ", "))
+            else
+                ImGui.TextColored(0.7, 0.7, 0.7, 1, "(none - all words were common)")
+            end
+            
+            ImGui.Separator()
+            
+            ImGui.Text("Enter item name to search for:")
+            ImGui.PushItemWidth(400)
+            failed_objective_search_input = ImGui.InputText('##ManualSearchTerm', failed_objective_search_input, 256)
+            ImGui.PopItemWidth()
+            
+            -- Retry button
+            ImGui.Text("")
+            if ImGui.Button("Retry Match with Custom Term", 250, 0) then
+                if failed_objective_search_input:len() > 0 then
+                    -- Try to match with custom search term
+                    local matched_item = quest_interface.retry_match_with_custom_term(
+                        selected_objective, 
+                        failed_objective_search_input
+                    )
+                    
+                    if matched_item then
+                        -- Success! Cache the result
+                        quest_db.store_objective(selected_objective, "", matched_item)
+                        failed_objectives[selected_objective] = nil
+                        update_failed_objectives_list()
+                        failed_objective_search_input = ""
+                        
+                        Write.Info("[UI] Manual override successful: '%s' -> '%s'", 
+                            selected_objective, matched_item)
+                    else
+                        Write.Error("[UI] Custom search term '%s' found no matches", 
+                            failed_objective_search_input)
+                    end
+                else
+                    Write.Error("[UI] Please enter a search term")
+                end
+            end
+            
+            ImGui.SameLine()
+            if ImGui.Button("Clear", 80, 0) then
+                failed_objective_search_input = ""
+            end
+            
+            ImGui.Separator()
+            ImGui.TextColored(0.7, 0.7, 0.7, 1, 
+                "Tip: Type part of the item name (e.g., 'treant', 'bark', 'silk')")
+            ImGui.TextColored(0.7, 0.7, 0.7, 1, 
+                "Once matched, the item will be cached and won't appear here again.")
+        end
+    end
+end
+
 local function displayGUI()
     if not drawGUI then return end
     
@@ -539,10 +641,18 @@ local function displayGUI()
         if ImGui.Button("Database##ViewMode1", 80, 0) then
             ui_view_mode = 1
         end
+        ImGui.SameLine()
+        if ImGui.Button("Failed##ViewMode2", 80, 0) then
+            ui_view_mode = 2
+            update_failed_objectives_list()
+        end
         ImGui.Separator()
         
         -- Display appropriate view
-        if ui_view_mode == 1 then
+        if ui_view_mode == 2 then
+            -- Failed Items View (manual retry)
+            display_failed_objectives_view()
+        elseif ui_view_mode == 1 then
             -- Database View
             display_database_table()
         else
