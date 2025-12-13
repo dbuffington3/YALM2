@@ -247,19 +247,23 @@ quest_interface.find_matching_quest_item = function(objective_text)
     end
     
     -- Define common words that should be filtered out
+    -- Note: Use underscores for Lua keywords (in_, for_, and_, or_)
     local common_words_set = {
-        of=true, the=true, a=true, an=true, from=true, to=true, in_=true, on=true, at=true, by=true, 
-        for_=true, with=true, and_=true, or_=true, piece=true, pieces=true, bit=true, part=true, 
+        of=true, the=true, a=true, an=true, from=true, to=true, on=true, at=true, by=true, 
+        with=true, piece=true, pieces=true, bit=true, part=true, 
         item=true, thing=true, stuff=true, material=true, sample=true
     }
     
-    -- Filter out common words from the words array (these will be used for scoring later)
+    -- Filter out common words from the words array
     local filtered_words = {}
     for _, word in ipairs(words) do
         if not common_words_set[word:lower()] then
             table.insert(filtered_words, word)
         end
     end
+    
+    Write.Debug("ITEM_MATCH: Cleaned='%s', Words=%s, Filtered=%s", cleaned, 
+        table.concat(words, "|"), table.concat(filtered_words, "|"))
     
     -- Add all word combinations (from both directions) - ONLY FROM FILTERED WORDS
     -- This ensures we don't search for combinations like "pieces of bark" when "pieces" and "of" are common words
