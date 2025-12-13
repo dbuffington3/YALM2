@@ -326,6 +326,20 @@ function quest_db.clear_all()
     return true
 end
 
+--- Clear the quest_objectives fuzzy match cache to force re-matching
+--- Called at startup to ensure fresh fuzzy matching with latest code
+function quest_db.clear_objective_cache()
+    local db = get_db()
+    if not db then
+        return false
+    end
+    
+    db:exec("DELETE FROM quest_objectives")
+    
+    Write.Debug("[QuestDB] Cleared quest objectives cache for fresh matching")
+    return true
+end
+
 --- Get debug info about the database
 function quest_db.get_status()
     local db = get_db()
