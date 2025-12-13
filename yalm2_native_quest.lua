@@ -115,6 +115,15 @@ local triggers = {
 -- UI view mode (0 = Task view, 1 = Database view)
 local ui_view_mode = 0
 
+-- Failed objective tracking for graceful failure
+-- Maps objective text → {filtered_words, custom_search_term (optional)}
+local failed_objectives = {}
+
+-- UI state for failed objectives
+local failed_objectives_list = {}  -- For combo display
+local selected_failed_objective = 1
+local failed_objective_search_input = ""  -- User's custom search term
+
 local taskheader = "\\ay[\\agYALM2 Native Quest\\ay]"  -- Colored for /echo commands
 local taskheader_plain = "[YALM2 Native Quest]"            -- Plain for print() statements
 
@@ -944,6 +953,16 @@ local function refresh_character_after_loot(character_name, item_name)
                                 -- Store in quest_objectives for future lookups
                                 quest_db.store_objective(objective.objective, task.task_name, matched_item_name)
                                 Write.Debug("[CHAR_REFRESH] Cached new objective match: '%s' -> '%s'", objective.objective, matched_item_name)
+                                -- Remove from failed objectives if it was there before
+                                failed_objectives[objective.objective] = nil
+                            else
+                                -- Match failed - track this objective for user assistance
+                                if not failed_objectives[objective.objective] then
+                                    failed_objectives[objective.objective] = {
+                                        filtered_words = quest_interface.get_last_filtered_words()
+                                    }
+                                    Write.Info("[CHAR_REFRESH] Failed to match objective: '%s' - User can provide search term in UI", objective.objective)
+                                end
                             end
                         end
                         
@@ -1089,6 +1108,15 @@ local function manual_refresh_with_messages(show_messages)
                                     if matched_item_name then
                                         -- Store in quest_objectives for future lookups
                                         quest_db.store_objective(objective.objective, task.task_name, matched_item_name)
+                                        -- Remove from failed objectives if it was there before
+                                        failed_objectives[objective.objective] = nil
+                                    else
+                                        -- Match failed - track this objective for user assistance
+                                        if not failed_objectives[objective.objective] then
+                                            failed_objectives[objective.objective] = {
+                                                filtered_words = quest_interface.get_last_filtered_words()
+                                            }
+                                        end
                                     end
                                 end
                                 

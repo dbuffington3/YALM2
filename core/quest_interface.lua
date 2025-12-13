@@ -13,6 +13,9 @@ local quest_interface = {}
 local native_tasks = nil
 local quest_database = nil  -- Store database reference passed from caller
 
+-- Store last filtered words for UI to display on failure
+local last_filtered_words = {}
+
 --- Initialize the quest interface with the native quest system
 quest_interface.initialize = function(global_settings, native_tasks_module, database_ref)
     native_tasks = native_tasks_module
@@ -22,6 +25,12 @@ quest_interface.initialize = function(global_settings, native_tasks_module, data
     if quest_database then
         debug_logger.debug("QUEST_INTERFACE: Database reference stored")
     end
+end
+
+--- Get the last filtered words from the most recent matching attempt
+--- Used by UI to show user what keywords we extracted from objective
+quest_interface.get_last_filtered_words = function()
+    return last_filtered_words
 end
 
 --- Check if an item is needed for quests
@@ -201,6 +210,52 @@ quest_interface.get_per_character_needs = function()
     return {}
 end
 
+--- Perform manual retry matching with user-provided search term
+--- Called when automatic matching fails and user provides custom search term
+--- @param objective_text string - The original objective text
+--- @param custom_search_term string - User-provided search term
+--- @return string - Matched item name or nil
+quest_interface.retry_match_with_custom_term = function(objective_text, custom_search_term)
+    if not objective_text or objective_text == "" then
+        Write.Error("ITEM_MATCH: No objective text provided for manual retry")
+        return nil
+    end
+    
+    if not custom_search_term or custom_search_term == "" then
+        Write.Error("ITEM_MATCH: No custom search term provided for manual retry")
+        return nil
+    end
+    
+    local YALM2_Database = quest_database or _G.YALM2_Database
+    if not YALM2_Database or not YALM2_Database.database then
+        Write.Error("ITEM_MATCH: Database not available for manual retry")
+        return nil
+    end
+    
+    Write.Info("ITEM_MATCH: Manual retry with custom term: '%s' for objective: '%s'", custom_search_term, objective_text)
+    
+    -- Try exact match first with custom search term
+    local query = string.format("SELECT * FROM raw_item_data WHERE LOWER(name) = LOWER('%s') AND questitem = 1 LIMIT 1", 
+        custom_search_term:gsub("'", "''"))
+    
+    for row in YALM2_Database.database:nrows(query) do
+        Write.Info("ITEM_MATCH: Manual retry found EXACT match: %s", row.name)
+        return row.name
+    end
+    
+    -- Try fuzzy/contains match with custom search term
+    query = string.format("SELECT * FROM raw_item_data WHERE LOWER(name) LIKE LOWER('%%%s%%') AND questitem = 1 LIMIT 1", 
+        custom_search_term:gsub("'", "''"))
+    
+    for row in YALM2_Database.database:nrows(query) do
+        Write.Info("ITEM_MATCH: Manual retry found fuzzy match: %s", row.name)
+        return row.name
+    end
+    
+    Write.Error("ITEM_MATCH: Manual retry with term '%s' found no matches in database", custom_search_term)
+    return nil
+end
+
 --- Smart item name matching - finds actual item names in database by fuzzy matching
 --- Takes the FULL objective text and extracts/matches against database
 --- This solves problems like: "Loot 3 pieces of bark from the treants" → "Treant Bark"
@@ -276,6 +331,9 @@ quest_interface.find_matching_quest_item = function(objective_text)
             table.insert(filtered_words, singular)
         end
     end
+    
+    -- Store filtered words for UI to access on failure
+    last_filtered_words = filtered_words
     
     -- Debug output for troubleshooting
     if #filtered_words == 0 then
