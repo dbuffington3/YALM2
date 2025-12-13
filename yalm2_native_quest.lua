@@ -86,6 +86,7 @@ quest_interface.initialize(nil, nil, YALM2_Database)
 -- Clear the quest objectives cache at startup to force fresh fuzzy matching
 -- This ensures any code improvements to fuzzy matching take effect immediately
 quest_db.clear_objective_cache()
+quest_db.verify_cache_clear()
 
 -- Arguments passed when starting the script  
 local args = { ... }

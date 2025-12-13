@@ -331,13 +331,35 @@ end
 function quest_db.clear_objective_cache()
     local db = get_db()
     if not db then
+        Write.Error("[QuestDB] Failed to get database connection for cache clear")
         return false
     end
     
     db:exec("DELETE FROM quest_objectives")
     
-    Write.Debug("[QuestDB] Cleared quest objectives cache for fresh matching")
+    Write.Info("[QuestDB] Cleared quest objectives cache for fresh matching")
     return true
+end
+
+--- Verify cache was cleared and log count
+function quest_db.verify_cache_clear()
+    local db = get_db()
+    if not db then
+        return 0
+    end
+    
+    local count = 0
+    for row in db:nrows("SELECT COUNT(*) as cnt FROM quest_objectives") do
+        count = row.cnt
+    end
+    
+    if count > 0 then
+        Write.Error("[QuestDB] Cache clear FAILED - still %d entries in quest_objectives", count)
+    else
+        Write.Info("[QuestDB] Cache clear verified - quest_objectives is empty")
+    end
+    
+    return count
 end
 
 --- Get debug info about the database
