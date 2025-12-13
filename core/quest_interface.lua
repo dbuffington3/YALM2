@@ -246,6 +246,19 @@ quest_interface.find_matching_quest_item = function(objective_text)
         table.insert(words, word)
     end
     
+    -- Function to convert plural forms to singular for better matching
+    local function singularize(word)
+        -- Common plural endings
+        if word:match("ies$") then
+            return word:sub(1, -4) .. "y"  -- berries -> berry
+        elseif word:match("es$") and (word:match("ch$") or word:match("sh$") or word:match("s$")) then
+            return word:sub(1, -3)  -- bushes -> bush, treants -> treant
+        elseif word:match("s$") and not word:match("ss$") and not word:match("us$") then
+            return word:sub(1, -2)  -- items -> item, treants -> treant
+        end
+        return word
+    end
+    
     -- Define common words that should be filtered out
     -- Note: Use underscores for Lua keywords (in_, for_, and_, or_)
     local common_words_set = {
@@ -254,11 +267,13 @@ quest_interface.find_matching_quest_item = function(objective_text)
         item=true, thing=true, stuff=true, material=true, sample=true
     }
     
-    -- Filter out common words from the words array
+    -- Filter out common words from the words array AND singularize
     local filtered_words = {}
     for _, word in ipairs(words) do
         if not common_words_set[word:lower()] then
-            table.insert(filtered_words, word)
+            -- Singularize the word for better matching
+            local singular = singularize(word:lower())
+            table.insert(filtered_words, singular)
         end
     end
     
@@ -344,10 +359,19 @@ quest_interface.find_matching_quest_item = function(objective_text)
                     end
                     
                     -- Count how many words from the filtered search are in this item
+                    -- Singularize both the item name and filtered words for comparison
                     local matching_words = 0
+                    local item_name_lower = item_name:lower()
                     for _, word in ipairs(filtered_words) do
-                        if item_name:lower():find(word:lower(), 1, true) then
+                        -- Try matching the singular form directly
+                        if item_name_lower:find(word, 1, true) then
                             matching_words = matching_words + 1
+                        else
+                            -- Also try the pluralized form (word + 's') in case item has plural
+                            local plural = word .. "s"
+                            if item_name_lower:find(plural, 1, true) then
+                                matching_words = matching_words + 1
+                            end
                         end
                     end
                     
