@@ -305,13 +305,17 @@ quest_interface.find_matching_quest_item = function(objective_text)
         end
     end
     
+    Write.Info("ITEM_MATCH: Search terms built: %s", table.concat(unique_terms, " | "))
+    
     -- Try each search term in order
     for _, search_term in ipairs(unique_terms) do
         if search_term and search_term ~= "" then
             -- Strategy 1: Exact match (case-insensitive) - MUST be a quest item
             local query = string.format("SELECT * FROM raw_item_data WHERE LOWER(name) = LOWER('%s') AND questitem = 1 LIMIT 1", 
                 search_term:gsub("'", "''"))
+            Write.Debug("ITEM_MATCH: Trying exact match: '%s'", search_term)
             for row in YALM2_Database.database:nrows(query) do
+                Write.Info("ITEM_MATCH: FOUND EXACT MATCH: %s", row.name)
                 return row.name
             end
         end
@@ -391,7 +395,8 @@ quest_interface.find_matching_quest_item = function(objective_text)
         end
     end
     
-    Write.Info("ITEM_MATCH: No quest items found matching '%s' in database", objective_text)
+    Write.Info("ITEM_MATCH: No quest items found matching '%s' in database. Searched for: %s. Filtered words: %s", 
+        objective_text, table.concat(unique_terms, " | "), table.concat(filtered_words, ", "))
     return nil
 end
 
