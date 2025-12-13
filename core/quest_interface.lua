@@ -202,11 +202,12 @@ quest_interface.get_per_character_needs = function()
 end
 
 --- Smart item name matching - finds actual item names in database by fuzzy matching
---- Takes a partial/extracted item name and returns the best matching item from the database
---- This solves problems like: "bones" → "Golem Bones" by searching for database items
+--- Takes the FULL objective text and extracts/matches against database
+--- This solves problems like: "Loot 3 pieces of bark from the treants" → "Treant Bark"
 --- VALIDATES that matched items are actual quest items (questitem=1) in the database
-quest_interface.find_matching_quest_item = function(partial_item_name)
-    if not partial_item_name or partial_item_name == "" then
+--- @param objective_text string - The full objective text (e.g., "Loot 3 pieces of bark from the treants")
+quest_interface.find_matching_quest_item = function(objective_text)
+    if not objective_text or objective_text == "" then
         return nil
     end
     
@@ -219,7 +220,7 @@ quest_interface.find_matching_quest_item = function(partial_item_name)
     end
     
     -- Clean up the input: remove common words and punctuation
-    local cleaned = partial_item_name
+    local cleaned = objective_text
     -- Remove possessive markers
     cleaned = cleaned:gsub("'s", " ")
     cleaned = cleaned:gsub("'", " ")
@@ -377,15 +378,15 @@ quest_interface.find_matching_quest_item = function(partial_item_name)
         if #sorted_matches > 0 then
             local best_match = sorted_matches[1]
             Write.Info("ITEM_MATCH: Found %d fuzzy matches for '%s', returning best match: '%s' (score: %.1f, search: '%s')", 
-                #sorted_matches, partial_item_name, best_match.name, best_match.score, best_match.search_term)
-            debug_logger.debug("ITEM_MATCH: Top 5 matches for '%s': %s", partial_item_name, 
+                #sorted_matches, objective_text, best_match.name, best_match.score, best_match.search_term)
+            debug_logger.debug("ITEM_MATCH: Top 5 matches for '%s': %s", objective_text, 
                 table.concat({sorted_matches[1].name, sorted_matches[2] and sorted_matches[2].name or "", 
                              sorted_matches[3] and sorted_matches[3].name or ""}, " | "))
             return best_match.name
         end
     end
     
-    Write.Info("ITEM_MATCH: No quest items found matching '%s' in database", partial_item_name)
+    Write.Info("ITEM_MATCH: No quest items found matching '%s' in database", objective_text)
     return nil
 end
 

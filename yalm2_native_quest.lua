@@ -933,7 +933,8 @@ local function refresh_character_after_loot(character_name, item_name)
                             Write.Debug("[CHAR_REFRESH] Using cached match for objective: '%s' -> '%s'", objective.objective, matched_item_name)
                         else
                             -- New objective - perform fuzzy matching once and cache it
-                            matched_item_name = quest_interface.find_matching_quest_item(item_name_extracted)
+                            -- Pass the FULL objective text so fuzzy matching has all context words
+                            matched_item_name = quest_interface.find_matching_quest_item(objective.objective)
                             if matched_item_name then
                                 -- Store in quest_objectives for future lookups
                                 quest_db.store_objective(objective.objective, task.task_name, matched_item_name)
@@ -1078,7 +1079,8 @@ local function manual_refresh_with_messages(show_messages)
                                     matched_item_name = objective_data.item_name
                                 else
                                     -- New objective - perform fuzzy matching once and cache it
-                                    matched_item_name = quest_interface.find_matching_quest_item(item_name)
+                                    -- Pass the FULL objective text so fuzzy matching has all context words
+                                    matched_item_name = quest_interface.find_matching_quest_item(objective.objective)
                                     if matched_item_name then
                                         -- Store in quest_objectives for future lookups
                                         quest_db.store_objective(objective.objective, task.task_name, matched_item_name)
