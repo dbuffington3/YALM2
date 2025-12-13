@@ -261,23 +261,27 @@ quest_interface.find_matching_quest_item = function(objective_text)
         end
     end
     
-    -- Add all word combinations (from both directions)
+    -- Add all word combinations (from both directions) - ONLY FROM FILTERED WORDS
+    -- This ensures we don't search for combinations like "pieces of bark" when "pieces" and "of" are common words
     -- Prioritize multi-word searches BEFORE single words
-    -- Full phrase first
-    table.insert(search_terms, table.concat(words, " "))
     
-    -- Remove from right (progressively shorter from the end)
-    for i = #words - 1, 2, -1 do  -- Stop at 2 to keep 2+ word combinations
-        table.insert(search_terms, table.concat(words, " ", 1, i))
+    -- Full phrase (filtered words only)
+    if #filtered_words > 0 then
+        table.insert(search_terms, table.concat(filtered_words, " "))
+        
+        -- Remove from right (progressively shorter from the end, keeping 2+ words)
+        for i = #filtered_words - 1, 2, -1 do
+            table.insert(search_terms, table.concat(filtered_words, " ", 1, i))
+        end
+        
+        -- Remove from left (progressively shorter from the start, keeping 2+ words)
+        for i = 2, #filtered_words - 1 do
+            table.insert(search_terms, table.concat(filtered_words, " ", i, #filtered_words))
+        end
     end
     
-    -- Remove from left (progressively shorter from the start)
-    for i = 2, #words - 1 do  -- Stop before the end to keep 2+ word combinations
-        table.insert(search_terms, table.concat(words, " ", i, #words))
-    end
-    
-    -- NOW add individual words (after multi-word combinations have been tried)
-    for _, word in ipairs(words) do
+    -- Now add individual filtered words (after multi-word combinations have been tried)
+    for _, word in ipairs(filtered_words) do
         table.insert(search_terms, word)
     end
     
@@ -309,25 +313,10 @@ quest_interface.find_matching_quest_item = function(objective_text)
     
     for _, search_term in ipairs(unique_terms) do
         if search_term and search_term ~= "" and search_term:len() > 2 then
-            -- Skip single common words that are too generic
-            local common_words = {
-                "of", "the", "a", "an", "from", "to", "in", "on", "at", "by", "for", "with", "and", "or",
-                "piece", "pieces", "bit", "part", "item", "thing", "stuff", "material", "sample"
-            }
+            local query = string.format("SELECT * FROM raw_item_data WHERE LOWER(name) LIKE LOWER('%%%s%%') AND questitem = 1", 
+                search_term:gsub("'", "''"))
             
-            local is_common = false
-            for _, common in ipairs(common_words) do
-                if search_term:lower() == common then
-                    is_common = true
-                    break
-                end
-            end
-            
-            if not is_common then
-                local query = string.format("SELECT * FROM raw_item_data WHERE LOWER(name) LIKE LOWER('%%%s%%') AND questitem = 1", 
-                    search_term:gsub("'", "''"))
-                
-                for row in YALM2_Database.database:nrows(query) do
+            for row in YALM2_Database.database:nrows(query) do
                     local item_name = row.name
                     -- Calculate relevance score
                     -- Higher score for longer search terms (more specific)
@@ -369,7 +358,6 @@ quest_interface.find_matching_quest_item = function(objective_text)
                         end
                     end
                 end
-            end
         end
     end
     
