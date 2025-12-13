@@ -224,11 +224,10 @@ quest_interface.find_matching_quest_item = function(objective_text)
     -- Remove possessive markers
     cleaned = cleaned:gsub("'s", " ")
     cleaned = cleaned:gsub("'", " ")
-    -- Remove leading articles and common words
+    -- Remove leading action words only (don't remove from/the in middle of phrase - they provide context)
     cleaned = cleaned:gsub("^loot ", "", 1)
     cleaned = cleaned:gsub("^collect ", "", 1)
     cleaned = cleaned:gsub("^gather ", "", 1)
-    cleaned = cleaned:gsub("^the ", "", 1)
     -- Remove all numeric characters (quest objectives often have "loot 3 pieces" type phrasing)
     cleaned = cleaned:gsub("%d+", " ")
     -- Collapse multiple spaces
@@ -263,20 +262,21 @@ quest_interface.find_matching_quest_item = function(objective_text)
     end
     
     -- Add all word combinations (from both directions)
-    -- Full phrase
+    -- Prioritize multi-word searches BEFORE single words
+    -- Full phrase first
     table.insert(search_terms, table.concat(words, " "))
     
     -- Remove from right (progressively shorter from the end)
-    for i = #words - 1, 1, -1 do
+    for i = #words - 1, 2, -1 do  -- Stop at 2 to keep 2+ word combinations
         table.insert(search_terms, table.concat(words, " ", 1, i))
     end
     
     -- Remove from left (progressively shorter from the start)
-    for i = 2, #words do
+    for i = 2, #words - 1 do  -- Stop before the end to keep 2+ word combinations
         table.insert(search_terms, table.concat(words, " ", i, #words))
     end
     
-    -- Add individual words
+    -- NOW add individual words (after multi-word combinations have been tried)
     for _, word in ipairs(words) do
         table.insert(search_terms, word)
     end
@@ -347,19 +347,26 @@ quest_interface.find_matching_quest_item = function(objective_text)
                             matching_words = matching_words + 1
                         end
                     end
-                    score = score + (matching_words * 20)
                     
-                    -- Penalty: if the item name is much longer than the search, it might be a false match
-                    local name_words = 0
-                    for _ in item_name:gmatch("%S+") do
-                        name_words = name_words + 1
-                    end
-                    if name_words > (#filtered_words * 2) then
-                        score = score - 50  -- Less likely to be right match
-                    end
-                    
-                    if not all_matches[item_name] or all_matches[item_name].score < score then
-                        all_matches[item_name] = { score = score, search_term = search_term }
+                    -- CRITICAL: Only consider items that contain ALL filtered words
+                    -- This prevents single-word matches from succeeding when multiple keywords exist
+                    if #filtered_words > 0 and matching_words < #filtered_words then
+                        -- Skip this item - it doesn't have all the required keywords
+                    else
+                        score = score + (matching_words * 20)
+                        
+                        -- Penalty: if the item name is much longer than the search, it might be a false match
+                        local name_words = 0
+                        for _ in item_name:gmatch("%S+") do
+                            name_words = name_words + 1
+                        end
+                        if name_words > (#filtered_words * 2) then
+                            score = score - 50  -- Less likely to be right match
+                        end
+                        
+                        if not all_matches[item_name] or all_matches[item_name].score < score then
+                            all_matches[item_name] = { score = score, search_term = search_term }
+                        end
                     end
                 end
             end
