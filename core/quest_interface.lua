@@ -262,8 +262,14 @@ quest_interface.find_matching_quest_item = function(objective_text)
         end
     end
     
-    Write.Debug("ITEM_MATCH: Cleaned='%s', Words=%s, Filtered=%s", cleaned, 
-        table.concat(words, "|"), table.concat(filtered_words, "|"))
+    -- Debug output for troubleshooting
+    if #filtered_words == 0 then
+        Write.Error("ITEM_MATCH: NO FILTERED WORDS! Cleaned='%s', Words=%s", cleaned, 
+            table.concat(words, "|"))
+    else
+        Write.Info("ITEM_MATCH: Processing '%s' -> Filtered=%s", objective_text, 
+            table.concat(filtered_words, ", "))
+    end
     
     -- Add all word combinations (from both directions) - ONLY FROM FILTERED WORDS
     -- This ensures we don't search for combinations like "pieces of bark" when "pieces" and "of" are common words
