@@ -7,6 +7,72 @@ local utils = require("yalm2.lib.utils")
 
 local inventory = {}
 
+-- ============================================================================
+-- CHARACTER BAG CACHE SYSTEM
+-- ============================================================================
+-- Cache bag configurations per character to avoid repeated DanNet queries
+-- Bags don't change often, so cache them indefinitely until reload
+local character_bag_cache = {}
+
+--[[
+	Get cached bag information for a character
+	
+	Returns a table with format:
+	{
+		[24] = { bag_id=67633, bagtype=58, total_slots=20, is_tradeskill_bag=true },
+		[25] = { bag_id=12345, bagtype=0, total_slots=20, is_tradeskill_bag=false },
+		...
+	}
+]]
+local function get_character_bag_cache(character_name)
+	if not character_bag_cache[character_name] then
+		character_bag_cache[character_name] = {}
+	end
+	return character_bag_cache[character_name]
+end
+
+--[[
+	Scan and cache a character's bags
+	Called once per character, results cached for entire session
+]]
+local function cache_character_bags(character_name, dannet_delay)
+	local bag_cache = get_character_bag_cache(character_name)
+	
+	-- Query each bag slot (24-32)
+	for bag_slot = 24, 32 do
+		-- Query bag name - returns NULL if no bag in slot
+		local bag_name = dannet.query(character_name, string.format("Me.Inventory[%d].Name", bag_slot), dannet_delay)
+		
+		if bag_name and bag_name ~= 'NULL' and bag_name ~= '' then
+			-- Bag exists - get its ID
+			local bag_id_str = dannet.query(character_name, string.format("Me.Inventory[%d].ID", bag_slot), dannet_delay)
+			local bag_id = tonumber(bag_id_str) or 0
+			
+			if bag_id > 0 then
+				-- Look up bag type in database
+				local bag_data = YALM2_Database.QueryDatabaseForItemId(bag_id)
+				local bagtype = 0
+				
+				if bag_data then
+					bagtype = tonumber(bag_data.bagtype) or 0
+				end
+				
+				-- Query total slots in this bag
+				local total_slots_str = dannet.query(character_name, string.format("Me.Inventory[%d].Items", bag_slot), dannet_delay)
+				local total_slots = tonumber(total_slots_str) or 0
+				
+				-- Cache this bag's info
+				bag_cache[bag_slot] = {
+					bag_id = bag_id,
+					bagtype = bagtype,
+					total_slots = total_slots,
+					is_tradeskill_bag = (bagtype == 58)
+				}
+			end
+		end
+	end
+end
+
 inventory.check_group_member = function(member, list, dannet_delay, always_loot)
 	-- Debug for quest items disabled
 	local member_name = member and member.Name() or "unknown"
@@ -267,9 +333,11 @@ end
 --[[
 	Count available inventory slots for a remote character via DanNet
 	
-	This checks their bags by type to see if they can hold the specific item type.
-	Instead of querying individual slots (which is slow), we query the bag structure
-	and know which bags can hold which items based on bagtype.
+	This uses a cached bag configuration (built at startup/first-use) to determine
+	which bags can hold which items. Avoids repeated DanNet queries for bag info.
+	
+	The only per-call query is UsedSlots (changes frequently).
+	Bag type/structure is cached (changes rarely).
 	
 	Args:
 		character_name (string): Name of remote character
@@ -284,7 +352,6 @@ inventory.count_available_slots_for_item_remote = function(character_name, item_
 		return 0
 	end
 	
-	local dannet = require("yalm2.lib.dannet")
 	local item_data = YALM2_Database.QueryDatabaseForItemId(item_id)
 	
 	if not item_data then
@@ -292,54 +359,39 @@ inventory.count_available_slots_for_item_remote = function(character_name, item_
 	end
 	
 	local is_tradeskill = (tonumber(item_data.tradeskills) or 0) > 0
+	
+	-- Get cached bag info for this character, building cache if needed
+	local bag_cache = get_character_bag_cache(character_name)
+	
+	-- If cache is empty, scan bags first
+	if utils.length(bag_cache) == 0 then
+		cache_character_bags(character_name, dannet_delay)
+		bag_cache = get_character_bag_cache(character_name)
+	end
+	
 	local available_slots = 0
 	
-	-- Query each bag slot (24-32) and check its type
-	for bag_slot = 24, 32 do
-		-- Query: "Me.Inventory[24].Name" returns bag name if it exists, else NULL
-		local bag_name = dannet.query(character_name, string.format("Me.Inventory[%d].Name", bag_slot), dannet_delay)
+	-- For each cached bag, count available slots
+	for bag_slot, bag_info in pairs(bag_cache) do
+		-- Determine if this bag can hold the item
+		local can_use_this_bag = false
 		
-		if bag_name and bag_name ~= 'NULL' and bag_name ~= '' then
-			-- Bag exists - get its ID to determine type
-			local bag_id_str = dannet.query(character_name, string.format("Me.Inventory[%d].ID", bag_slot), dannet_delay)
-			local bag_id = tonumber(bag_id_str) or 0
+		if is_tradeskill then
+			-- Tradeskill items: can go in ANY bag
+			can_use_this_bag = true
+		else
+			-- Non-tradeskill items: only go in non-tradeskill bags
+			can_use_this_bag = not bag_info.is_tradeskill_bag
+		end
+		
+		-- If this bag can hold the item, query its current used slots
+		if can_use_this_bag then
+			-- Query current used slots (this changes frequently)
+			local used_slots_str = dannet.query(character_name, string.format("Me.Inventory[%d].UsedSlots", bag_slot), dannet_delay)
+			local used_slots = tonumber(used_slots_str) or 0
 			
-			if bag_id > 0 then
-				-- Look up bag type in database
-				local bag_data = YALM2_Database.QueryDatabaseForItemId(bag_id)
-				local bagtype = 0
-				
-				if bag_data then
-					bagtype = tonumber(bag_data.bagtype) or 0
-				end
-				
-				-- Determine if this bag can hold the item
-				-- bagtype 58 = tradeskill-only bags
-				local is_tradeskill_bag = (bagtype == 58)
-				local can_use_this_bag = false
-				
-				if is_tradeskill then
-					-- Tradeskill items: can go in ANY bag
-					can_use_this_bag = true
-				else
-					-- Non-tradeskill items: only go in non-tradeskill bags
-					can_use_this_bag = not is_tradeskill_bag
-				end
-				
-				-- If this bag can hold the item, count its free slots
-				if can_use_this_bag then
-					-- Query: "Me.Inventory[24].Items" returns total slots in bag
-					local total_slots_str = dannet.query(character_name, string.format("Me.Inventory[%d].Items", bag_slot), dannet_delay)
-					local total_slots = tonumber(total_slots_str) or 0
-					
-					-- Query: "Me.Inventory[24].UsedSlots" returns filled slots
-					local used_slots_str = dannet.query(character_name, string.format("Me.Inventory[%d].UsedSlots", bag_slot), dannet_delay)
-					local used_slots = tonumber(used_slots_str) or 0
-					
-					local open_slots = math.max(0, total_slots - used_slots)
-					available_slots = available_slots + open_slots
-				end
-			end
+			local open_slots = math.max(0, bag_info.total_slots - used_slots)
+			available_slots = available_slots + open_slots
 		end
 	end
 	
