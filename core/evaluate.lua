@@ -13,6 +13,7 @@ local utils = require("yalm2.lib.utils")
 local Write = require("yalm2.lib.Write")
 local debug_logger = require("yalm2.lib.debug_logger")
 local quest_interface = require("yalm2.core.quest_interface")
+local equipment_dist = require("yalm2.lib.equipment_distribution")
 
 local evaluate = {}
 
@@ -52,6 +53,13 @@ evaluate.check_can_loot = function(member, item, loot, save_slots, dannet_delay,
 	local char_dannet_delay = char_settings.settings.dannet_delay
 	local char_always_loot = char_settings.settings.always_loot
 	local char_unmatched_item_rule = char_settings.settings.unmatched_item_rule
+	
+	-- Check if farming mode is active - if so, override unmatched_item_rule to "Ignore"
+	local farming_mode = char_settings.settings.farming_mode or false
+	if farming_mode and char_unmatched_item_rule == "Keep" then
+		debug_logger.info("FARMING_MODE: Active - overriding unmatched_item_rule from 'Keep' to 'Ignore'")
+		char_unmatched_item_rule = "Ignore"
+	end
 
 	local preference = evaluate.get_loot_preference(item, loot, char_settings, char_unmatched_item_rule)
 
@@ -328,6 +336,30 @@ evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_ite
 			debug_logger.info("LOOT: NoDrop flag: %s", tostring(loot_item.item_db.nodrop)) 
 			debug_logger.info("LOOT: QuestItem flag: %s", tostring(loot_item.item_db.questitemflag))
 			
+			-- ========================================
+			-- GATE 1A: EQUIPMENT DISTRIBUTION CHECK
+			-- ========================================
+			-- Check if this is an equipment distribution item (before quest/preference logic)
+			local armor_set, piece_type = equipment_dist.identify_armor_item(item_name)
+			if armor_set and piece_type then
+				debug_logger.info("EQUIPMENT: Item identified as %s / %s", armor_set, piece_type)
+				debug_logger.info("EQUIPMENT: This item requires equipment-aware distribution")
+				debug_logger.info("=== LOOT ANALYSIS END: EQUIPMENT DISTRIBUTION ===")
+				-- Return a preference marker for equipment distribution
+				-- The actual member selection will happen in looting.lua where we have access to the member list
+				return {
+					setting = "Keep",
+					data = {
+						equipment_dist = true,
+						armor_set = armor_set,
+						piece_type = piece_type
+					}
+				}
+			end
+			
+			-- ========================================
+			-- GATE 1B: QUEST ITEM CHECK
+			-- ========================================
 			-- Check if this is a quest item using the questitem column
 			local is_quest_item = (loot_item.item_db.questitem == 1)
 			debug_logger.info("LOOT: Quest Item Detection: %s (questitem=%s)", tostring(is_quest_item), tostring(loot_item.item_db.questitem))
@@ -344,16 +376,15 @@ evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_ite
 					return { setting = "Keep" }
 				end
 				
-				-- If not tradeskill (or tradeskills disabled), check if it's valuable
-				-- If price >= configured min AND stacks >= configured min, treat as regular loot
-				local valuable_min_price = (loot and loot.settings and loot.settings.valuable_item_min_price or 100000)
-				local valuable_min_stack = (loot and loot.settings and loot.settings.valuable_item_min_stack or 1000)
-				
-				local item_price = loot_item.item_db.price or 0
+			-- If not tradeskill (or tradeskills disabled), check if it's valuable
+			-- If price >= configured min AND stacks >= configured min, treat as regular loot
+			-- NOTE: valuable_min_price should be in copper (database cost is in copper)
+			local valuable_min_price = (loot and loot.settings and loot.settings.valuable_item_min_price or 10000)  -- 10000 = 10pp in packed format
+			local valuable_min_stack = (loot and loot.settings and loot.settings.valuable_item_min_stack or 1)				local item_price = loot_item.item_db.cost or 0  -- Database column is "cost", not "price"
 				local item_stacksize = loot_item.item_db.stacksize or 0
 				
 				if item_price >= valuable_min_price and item_stacksize >= valuable_min_stack then
-					debug_logger.info("LOOT: Quest item has high value (price=%d >= %d, stacksize=%d >= %d) - treating as regular loot", 
+					debug_logger.info("LOOT: Quest item has high value (cost=%d >= %d, stacksize=%d >= %d) - treating as regular loot", 
 						item_price, valuable_min_price, item_stacksize, valuable_min_stack)
 					is_quest_item = false  -- Treat as regular loot, not quest item
 					debug_logger.info("LOOT: Skipping quest system for valuable quest item, using normal loot rules")
@@ -361,12 +392,20 @@ evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_ite
 			end
 			
 			-- QUEST SYSTEM CHECK - ONLY for items flagged as quest items
-			if is_quest_item and quest_interface and quest_interface.get_quest_characters_local then
-				debug_logger.info("QUEST: This is a quest item - checking for characters who need it...")
-				debug_logger.info("QUEST: Looking for characters needing item: %s", item_name)
+			if is_quest_item then
+				-- Quest items should be KEPT only if needed, otherwise IGNORED
+				local chars = nil
 				
-				local chars = quest_interface.get_quest_characters_local(item_name)
-				debug_logger.info("QUEST: Direct local check returned %d characters", chars and #chars or 0)
+				if quest_interface and quest_interface.get_quest_characters_local then
+					debug_logger.info("QUEST: This is a quest item - checking for characters who need it...")
+					debug_logger.info("QUEST: Looking for characters needing item: %s", item_name)
+					
+					chars = quest_interface.get_quest_characters_local(item_name)
+					debug_logger.info("QUEST: Direct local check returned %d characters", chars and #chars or 0)
+				else
+					debug_logger.warn("QUEST: Quest item detected but quest_interface.get_quest_characters_local not available")
+					chars = {}
+				end
 				
 				if chars and #chars > 0 then
 					debug_logger.info("QUEST: Characters needing this item: %s", table.concat(chars, ", "))
@@ -386,7 +425,7 @@ evaluate.get_loot_preference = function(item, loot, char_settings, unmatched_ite
 					debug_logger.info("=== LOOT ANALYSIS END: QUEST IGNORE ===")
 					return { setting = "Ignore" }
 				end
-			elseif not is_quest_item then
+			else
 				debug_logger.info("LOOT: Not a quest item (questitem=0 or valuable/handled quest item) - skipping quest system, using normal loot rules")
 			end
 		else
