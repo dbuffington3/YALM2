@@ -267,7 +267,9 @@ end
 --[[
 	Count available inventory slots for a remote character via DanNet
 	
-	This checks their bags to see if they can hold the specific item type
+	This checks their bags by type to see if they can hold the specific item type.
+	Instead of querying individual slots (which is slow), we query the bag structure
+	and know which bags can hold which items based on bagtype.
 	
 	Args:
 		character_name (string): Name of remote character
@@ -292,19 +294,18 @@ inventory.count_available_slots_for_item_remote = function(character_name, item_
 	local is_tradeskill = (tonumber(item_data.tradeskills) or 0) > 0
 	local available_slots = 0
 	
-	-- Check each bag slot (24-32) for the remote character
+	-- Query each bag slot (24-32) and check its type
 	for bag_slot = 24, 32 do
-		local bag_query = string.format("Me.Inventory[%d]", bag_slot)
-		local bag_exists = dannet.query(character_name, bag_query, dannet_delay)
+		-- Query: "Me.Inventory[24].Name" returns bag name if it exists, else NULL
+		local bag_name = dannet.query(character_name, string.format("Me.Inventory[%d].Name", bag_slot), dannet_delay)
 		
-		if bag_exists and bag_exists ~= 'NULL' then
-			-- Get bag item ID
-			local bag_id_query = string.format("Me.Inventory[%d].ID", bag_slot)
-			local bag_id_str = dannet.query(character_name, bag_id_query, dannet_delay)
+		if bag_name and bag_name ~= 'NULL' and bag_name ~= '' then
+			-- Bag exists - get its ID to determine type
+			local bag_id_str = dannet.query(character_name, string.format("Me.Inventory[%d].ID", bag_slot), dannet_delay)
 			local bag_id = tonumber(bag_id_str) or 0
 			
 			if bag_id > 0 then
-				-- Get bag type from database
+				-- Look up bag type in database
 				local bag_data = YALM2_Database.QueryDatabaseForItemId(bag_id)
 				local bagtype = 0
 				
@@ -312,34 +313,31 @@ inventory.count_available_slots_for_item_remote = function(character_name, item_
 					bagtype = tonumber(bag_data.bagtype) or 0
 				end
 				
+				-- Determine if this bag can hold the item
+				-- bagtype 58 = tradeskill-only bags
 				local is_tradeskill_bag = (bagtype == 58)
+				local can_use_this_bag = false
 				
-				-- Count open slots in this bag
-				local open_slots_query = string.format("Me.Inventory[%d].Items", bag_slot)
-				local total_slots_str = dannet.query(character_name, open_slots_query, dannet_delay)
-				local total_slots = tonumber(total_slots_str) or 0
-				
-				-- Count filled slots
-				local used_slots = 0
-				for slot_num = 1, total_slots do
-					local slot_item_query = string.format("Me.Inventory[%d].Item[%d]", bag_slot, slot_num)
-					local slot_item = dannet.query(character_name, slot_item_query, dannet_delay)
-					if slot_item and slot_item ~= 'NULL' then
-						used_slots = used_slots + 1
-					end
+				if is_tradeskill then
+					-- Tradeskill items: can go in ANY bag
+					can_use_this_bag = true
+				else
+					-- Non-tradeskill items: only go in non-tradeskill bags
+					can_use_this_bag = not is_tradeskill_bag
 				end
 				
-				local open_slots = total_slots - used_slots
-				
-				-- Add to available count based on item type
-				if is_tradeskill then
-					-- Tradeskill items can go in any bag
+				-- If this bag can hold the item, count its free slots
+				if can_use_this_bag then
+					-- Query: "Me.Inventory[24].Items" returns total slots in bag
+					local total_slots_str = dannet.query(character_name, string.format("Me.Inventory[%d].Items", bag_slot), dannet_delay)
+					local total_slots = tonumber(total_slots_str) or 0
+					
+					-- Query: "Me.Inventory[24].UsedSlots" returns filled slots
+					local used_slots_str = dannet.query(character_name, string.format("Me.Inventory[%d].UsedSlots", bag_slot), dannet_delay)
+					local used_slots = tonumber(used_slots_str) or 0
+					
+					local open_slots = math.max(0, total_slots - used_slots)
 					available_slots = available_slots + open_slots
-				else
-					-- Non-tradeskill items can only go in non-tradeskill bags
-					if not is_tradeskill_bag then
-						available_slots = available_slots + open_slots
-					end
 				end
 			end
 		end
