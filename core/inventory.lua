@@ -45,12 +45,17 @@ inventory.check_inventory = function(member, item, save_slots, dannet_delay)
 	local item_id = item.ID()
 
 	if name == mq.TLO.Me.DisplayName() then
-		slots = mq.TLO.Me.FreeInventory()
+		-- LOCAL CHARACTER: Count only slots that can hold this specific item type
+		-- This prevents deadlock where tradeskill-only bags are full but look empty
+		slots = inventory.count_available_slots_for_item(item_id)
+		
 		count = mq.TLO.FindItemCount(item_id)() or 0
 		stacksize = mq.TLO.FindItem(item_id).StackSize() or 0
 	else
-		-- use dannet
-		slots = tonumber(dannet.query(name, "Me.FreeInventory", dannet_delay)) or 0
+		-- REMOTE CHARACTER: Check if they have room for this item type
+		-- Uses the new remote bag type checking to respect tradeskill-only bags
+		slots = inventory.count_available_slots_for_item_remote(name, item_id, dannet_delay)
+		
 		count = tonumber(dannet.query(name, string.format("FindItemCount[%s]", item_id), dannet_delay)) or 0
 		stacksize = tonumber(dannet.query(name, string.format("FindItem[%s].StackSize", item_id), dannet_delay)) or 0
 	end
@@ -160,10 +165,13 @@ end
 inventory.check_quantity = function(member, item, quantity, dannet_delay, always_loot)
 	local count, bankcount
 
-	if quantity == nil or always_loot then
+	-- If no quantity preference is set, allow looting (unless always_loot is false)
+	if quantity == nil then
 		return true
 	end
 
+	-- If quantity IS set, always respect it - don't bypass with always_loot
+	-- always_loot only applies when there's no quantity constraint
 	local name = member.Name()
 	local item_id = item.ID()
 
@@ -181,6 +189,212 @@ inventory.check_quantity = function(member, item, quantity, dannet_delay, always
 		return false
 	end
 
+	return true
+end
+
+inventory.count_open_slots_in_bag = function(bag_slot)
+	--[[
+	Count the number of open slots in a specific bag (inventory slot)
+	Returns: number of empty slots, or 0 if not a container
+	]]
+	local bag = mq.TLO.Me.Inventory(bag_slot)
+	if not bag() then
+		return 0
+	end
+	
+	local container_slots = tonumber(bag.Container()) or 0
+	if container_slots <= 0 then
+		return 0  -- Not a container
+	end
+	
+	local items_in_bag = tonumber(bag.Items()) or 0
+	return math.max(0, container_slots - items_in_bag)
+end
+
+inventory.count_available_slots_for_item = function(item_id)
+	--[[
+	Count how many slots are available for a specific item across all bags
+	
+	Logic:
+	- If item is tradeskill (tradeskills=1): can use tradeskill bags OR general bags
+	- If item is NOT tradeskill (tradeskills=0): can ONLY use general bags
+	
+	This prevents the ML from thinking it has room when only tradeskill bags are empty
+	
+	Returns: number of available slots that can hold this item
+	]]
+	
+	local item_data = YALM2_Database.QueryDatabaseForItemId(item_id)
+	if not item_data then
+		return 0
+	end
+	
+	local is_tradeskill = (tonumber(item_data.tradeskills) or 0) > 0
+	local available_slots = 0
+	
+	-- Scan bags in order (24 = first bag, 32 = typically last)
+	for bag_slot = 24, 32 do
+		local bag = mq.TLO.Me.Inventory(bag_slot)
+		if bag() then
+			-- Get the bag's type from the item database
+			local bag_id = bag.ID()
+			local bag_data = YALM2_Database.QueryDatabaseForItemId(bag_id)
+			local bagtype = 0
+			
+			if bag_data then
+				bagtype = tonumber(bag_data.bagtype) or 0
+			end
+			
+			local is_tradeskill_bag = (bagtype == 58)
+			local open_slots = inventory.count_open_slots_in_bag(bag_slot)
+			
+			-- Count open slots in this bag if it can hold this item
+			if is_tradeskill then
+				-- Tradeskill items: can go in ANY bag
+				available_slots = available_slots + open_slots
+			else
+				-- Non-tradeskill items: only go in non-tradeskill bags
+				if not is_tradeskill_bag then
+					available_slots = available_slots + open_slots
+				end
+			end
+		end
+	end
+	
+	return available_slots
+end
+
+--[[
+	Count available inventory slots for a remote character via DanNet
+	
+	This checks their bags to see if they can hold the specific item type
+	
+	Args:
+		character_name (string): Name of remote character
+		item_id (int): Item ID to check
+		dannet_delay (int): Delay for DanNet queries
+	
+	Returns:
+		(int) Number of available slots that can hold this item
+]]
+inventory.count_available_slots_for_item_remote = function(character_name, item_id, dannet_delay)
+	if not character_name or not item_id then
+		return 0
+	end
+	
+	local dannet = require("yalm2.lib.dannet")
+	local item_data = YALM2_Database.QueryDatabaseForItemId(item_id)
+	
+	if not item_data then
+		return 0
+	end
+	
+	local is_tradeskill = (tonumber(item_data.tradeskills) or 0) > 0
+	local available_slots = 0
+	
+	-- Check each bag slot (24-32) for the remote character
+	for bag_slot = 24, 32 do
+		local bag_query = string.format("Me.Inventory[%d]", bag_slot)
+		local bag_exists = dannet.query(character_name, bag_query, dannet_delay)
+		
+		if bag_exists and bag_exists ~= 'NULL' then
+			-- Get bag item ID
+			local bag_id_query = string.format("Me.Inventory[%d].ID", bag_slot)
+			local bag_id_str = dannet.query(character_name, bag_id_query, dannet_delay)
+			local bag_id = tonumber(bag_id_str) or 0
+			
+			if bag_id > 0 then
+				-- Get bag type from database
+				local bag_data = YALM2_Database.QueryDatabaseForItemId(bag_id)
+				local bagtype = 0
+				
+				if bag_data then
+					bagtype = tonumber(bag_data.bagtype) or 0
+				end
+				
+				local is_tradeskill_bag = (bagtype == 58)
+				
+				-- Count open slots in this bag
+				local open_slots_query = string.format("Me.Inventory[%d].Items", bag_slot)
+				local total_slots_str = dannet.query(character_name, open_slots_query, dannet_delay)
+				local total_slots = tonumber(total_slots_str) or 0
+				
+				-- Count filled slots
+				local used_slots = 0
+				for slot_num = 1, total_slots do
+					local slot_item_query = string.format("Me.Inventory[%d].Item[%d]", bag_slot, slot_num)
+					local slot_item = dannet.query(character_name, slot_item_query, dannet_delay)
+					if slot_item and slot_item ~= 'NULL' then
+						used_slots = used_slots + 1
+					end
+				end
+				
+				local open_slots = total_slots - used_slots
+				
+				-- Add to available count based on item type
+				if is_tradeskill then
+					-- Tradeskill items can go in any bag
+					available_slots = available_slots + open_slots
+				else
+					-- Non-tradeskill items can only go in non-tradeskill bags
+					if not is_tradeskill_bag then
+						available_slots = available_slots + open_slots
+					end
+				end
+			end
+		end
+	end
+	
+	return available_slots
+end
+
+inventory.verify_tradeskill_bag_placement = function()
+	--[[
+	At startup, verify that tradeskill bags (bagtype=58) are placed in the FIRST
+	available bag slots so that auto-inventory deposits items correctly
+	
+	Returns: true if OK, false if tradeskill bags are misplaced
+	]]
+	
+	local has_tradeskill_bag = false
+	local has_general_bag = false
+	local error_found = false
+	
+	for bag_slot = 24, 32 do
+		local bag = mq.TLO.Me.Inventory(bag_slot)
+		if bag() then
+			local bag_id = bag.ID()
+			local bag_data = YALM2_Database.QueryDatabaseForItemId(bag_id)
+			
+			if not bag_data then
+				goto next_bag
+			end
+			
+			local bagtype = tonumber(bag_data.bagtype) or 0
+			local bag_name = bag.Name()
+			
+			if bagtype == 58 then
+				-- This is a tradeskill-only bag
+				if has_general_bag then
+					-- ERROR: Found a general bag BEFORE this tradeskill bag
+					mq.cmdf('/echo \ar⚠️ BAG PLACEMENT ERROR:\ax Tradeskill bag "%s" (slot %d) is AFTER general bags!', bag_name, bag_slot)
+					error_found = true
+				end
+				has_tradeskill_bag = true
+			else
+				-- This is a general bag (or not a recognized container)
+				has_general_bag = true
+			end
+		end
+		
+		::next_bag::
+	end
+	
+	if error_found then
+		mq.cmdf('/echo \ar→ Move tradeskill bags to slots 24-26 (first slots) for proper auto-inventory!:\ax')
+		return false
+	end
+	
 	return true
 end
 
