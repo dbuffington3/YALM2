@@ -117,6 +117,37 @@ local function query_inventory_count(character_name, item_id)
     return 0
 end
 
+--[[
+    Count inventory (non-equipped) copies of an armor piece by name
+    This counts pieces sitting in the character's bags but not equipped
+    
+    Args:
+        character_name (string): Name of character
+        item_name (string): Name of the armor piece to count
+    
+    Returns:
+        (int) Count of that item in inventory (excluding what's equipped)
+]]
+local function count_inventory_pieces(character_name, item_name)
+    if not character_name or character_name == '' or not item_name then
+        return 0
+    end
+    
+    -- Use FindItemCount with the item name - this counts ALL copies (equipped + inventory)
+    -- We'll subtract equipped count in the caller to get just inventory pieces
+    local query = string.format('FindItemCount[%s]', item_name)
+    local result = dannet.query(character_name, query, 100)
+    
+    if result and result ~= 'NULL' and result ~= '' then
+        local count = tonumber(result)
+        if count then
+            return count
+        end
+    end
+    
+    return 0
+end
+
 -- ============================================================================
 -- Item/Armor Set Identification
 -- ============================================================================
@@ -402,7 +433,7 @@ end
     Calculate character's "satisfaction" score for an armor piece
     
     Algorithm:
-    - Satisfaction = equipped_count + remnant_count
+    - Satisfaction = equipped_count + inventory_count + remnant_count
     - Higher score = more satisfied/has more resources
     - Lower score = greater need
     
@@ -427,14 +458,26 @@ local function calculate_satisfaction(character_name, set_name, piece_type)
     -- Count equipped pieces
     local equipped_count = count_equipped_pieces(character_name, set_name, piece_type)
     
-    -- Count remnants (crafting materials)
+    -- Count inventory pieces (unequipped copies in bags) - for dropped armor sets
+    -- For crafted armor, remnant_name = the actual crafted piece name
+    -- For dropped armor, remnant_name = the dropped piece name  
+    local inventory_count = 0
+    if piece_config.remnant_name then
+        -- Get TOTAL count of item (equipped + inventory)
+        local total_count = count_inventory_pieces(character_name, piece_config.remnant_name)
+        -- Inventory count = total minus what's equipped
+        inventory_count = math.max(0, total_count - equipped_count)
+    end
+    
+    -- Count remnants (actual crafting materials, like leather for armor)
+    -- This will be 0 for dropped armor sets, but used for crafted sets
     local remnant_count = query_inventory_count(character_name, piece_config.remnant_id)
     
     -- Combined satisfaction: higher = more satisfied
-    local satisfaction = equipped_count + remnant_count
+    local satisfaction = equipped_count + inventory_count + remnant_count
     
-    mq.cmd(string.format('/echo [ARMOR_SAT] %s - Set:%s Piece:%s -> Equipped:%d + Remnants:%d = Score:%d', 
-        character_name, set_name, piece_type, equipped_count, remnant_count, satisfaction))
+    mq.cmd(string.format('/echo [ARMOR_SAT] %s - Set:%s Piece:%s -> Equipped:%d + Inv:%d + Remnants:%d = Score:%d', 
+        character_name, set_name, piece_type, equipped_count, inventory_count, remnant_count, satisfaction))
     
     return satisfaction
 end
