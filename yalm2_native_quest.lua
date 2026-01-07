@@ -366,8 +366,10 @@ local actor = actors.register(function(message)
         if message.content.id == 'REQUEST_TASKS' then
             triggers.need_task_update = true
             local master_tasks = nil
-            -- Save master's tasks before clearing (if this is the master)
-            if drawGUI == true and task_data.tasks[my_name] then
+            -- CRITICAL FIX: Save master's tasks ALWAYS (not just when drawGUI=true)
+            -- The ML's own task data must be preserved even if this is a collector instance (nohud)
+            -- Otherwise task refreshes will clear the ML's task data and never restore it
+            if task_data.tasks[my_name] then
                 master_tasks = task_data.tasks[my_name]
             end
             peer_list = {}
