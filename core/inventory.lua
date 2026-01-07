@@ -384,11 +384,31 @@ inventory.count_available_slots_for_item_remote = function(character_name, item_
 			can_use_this_bag = not bag_info.is_tradeskill_bag
 		end
 		
-		-- If this bag can hold the item, query its current used slots
+		-- If this bag can hold the item, estimate used slots from available queries
 		if can_use_this_bag then
-			-- Query current used slots (this changes frequently)
-			local used_slots_str = dannet.query(character_name, string.format("Me.Inventory[%d].UsedSlots", bag_slot), dannet_delay)
-			local used_slots = tonumber(used_slots_str) or 0
+			-- Since UsedSlots doesn't work remotely, we assume the bag is getting full
+			-- For safety, assume at least 1 slot is used if we have items in the bag
+			-- Query just the first slot to see if bag has any items
+			local first_item = dannet.query(character_name, string.format("Me.Inventory[%d].Item[1]", bag_slot), dannet_delay)
+			
+			local used_slots = 0
+			if first_item and first_item ~= "NULL" and first_item ~= "" then
+				-- Bag has items, conservatively assume most slots are used
+				-- Better to report 0 slots available than give items to a full bag
+				-- Query a middle slot to estimate fill
+				local mid_item = dannet.query(character_name, string.format("Me.Inventory[%d].Item[%d]", bag_slot, math.ceil(bag_info.total_slots / 2)), dannet_delay)
+				
+				if mid_item and mid_item ~= "NULL" and mid_item ~= "" then
+					-- Mid slot has item too, assume bag is ~75% full
+					used_slots = math.ceil(bag_info.total_slots * 0.75)
+				else
+					-- Only early slots have items, assume 30% full
+					used_slots = math.ceil(bag_info.total_slots * 0.3)
+				end
+			else
+				-- First slot is empty, bag has space
+				used_slots = 0
+			end
 			
 			local open_slots = math.max(0, bag_info.total_slots - used_slots)
 			available_slots = available_slots + open_slots
