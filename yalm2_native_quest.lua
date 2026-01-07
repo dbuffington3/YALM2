@@ -1743,6 +1743,20 @@ local function init()
         task_data.tasks[my_name] = task_data.my_tasks
         table.insert(peer_list, my_name)
         table.sort(peer_list)
+        
+        -- CRITICAL FIX: UI coordinator must detect its OWN task updates
+        -- The collector instance can't update the UI's task_data because it runs with drawGUI=false
+        -- So the UI must listen directly to its own task update events
+        local function ui_update_event()
+            Write.Debug("[NativeQuest] UI coordinator detected own task update")
+            task_data.my_tasks = get_tasks()
+            task_data.tasks[my_name] = task_data.my_tasks
+            triggers.timestamp = mq.gettime()
+        end
+        
+        mq.event('ui_update_event', '#*#Your task #*# has been updated#*#', ui_update_event)
+        mq.event('ui_new_task_event', '#*#You have been assigned the task#*#', ui_update_event)
+        mq.event('ui_shared_task_event', '#*#Your shared task #*# has ended.', ui_update_event)
     end
     mq.bind('/yalm2quest', cmd_yalm2quest)
     mq.cmd(string.format('/echo %s \\agstarting for %s. Use \\ar/yalm2quest help \\agfor commands.', taskheader, my_name))
