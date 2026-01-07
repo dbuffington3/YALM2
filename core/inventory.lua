@@ -349,24 +349,31 @@ end
 ]]
 inventory.count_available_slots_for_item_remote = function(character_name, item_id, dannet_delay)
 	if not character_name or not item_id then
+		debug_logger.warn("COUNT_SLOTS_REMOTE: character_name=%s, item_id=%s - returning 0", tostring(character_name), tostring(item_id))
 		return 0
 	end
 	
 	local item_data = YALM2_Database.QueryDatabaseForItemId(item_id)
 	
 	if not item_data then
+		debug_logger.warn("COUNT_SLOTS_REMOTE: item_id=%d not found in database - returning 0", item_id)
 		return 0
 	end
 	
 	local is_tradeskill = (tonumber(item_data.tradeskills) or 0) > 0
+	debug_logger.info("COUNT_SLOTS_REMOTE: %s for %s (ID: %d, tradeskill=%s)", character_name, item_data.name, item_id, tostring(is_tradeskill))
 	
 	-- Get cached bag info for this character, building cache if needed
 	local bag_cache = get_character_bag_cache(character_name)
 	
 	-- If cache is empty, scan bags first
 	if utils.length(bag_cache) == 0 then
+		debug_logger.info("COUNT_SLOTS_REMOTE: Building bag cache for %s", character_name)
 		cache_character_bags(character_name, dannet_delay)
 		bag_cache = get_character_bag_cache(character_name)
+		debug_logger.info("COUNT_SLOTS_REMOTE: Cache built, %d bags found", utils.length(bag_cache))
+	else
+		debug_logger.info("COUNT_SLOTS_REMOTE: Using existing cache for %s with %d bags", character_name, utils.length(bag_cache))
 	end
 	
 	local available_slots = 0
@@ -384,6 +391,9 @@ inventory.count_available_slots_for_item_remote = function(character_name, item_
 			can_use_this_bag = not bag_info.is_tradeskill_bag
 		end
 		
+		debug_logger.debug("COUNT_SLOTS_REMOTE: Bag slot %d: type=%d, total=%d, can_use=%s", 
+			bag_slot, bag_info.bagtype, bag_info.total_slots, tostring(can_use_this_bag))
+		
 		-- If this bag can hold the item, estimate used slots from available queries
 		if can_use_this_bag then
 			-- Since UsedSlots doesn't work remotely, be VERY CONSERVATIVE
@@ -395,6 +405,7 @@ inventory.count_available_slots_for_item_remote = function(character_name, item_
 			if last_item and last_item ~= "NULL" and last_item ~= "" then
 				-- Last slot has an item, bag is probably full or very full
 				-- Be conservative: assume NO available slots
+				debug_logger.debug("COUNT_SLOTS_REMOTE: Slot %d last slot FULL (%s) - assuming 0 open slots", bag_slot, last_item)
 				open_slots = 0
 			else
 				-- Last slot is empty, check first slot
@@ -404,17 +415,21 @@ inventory.count_available_slots_for_item_remote = function(character_name, item_
 				if first_item and first_item ~= "NULL" and first_item ~= "" then
 					-- First slot has item, but last doesn't: assume 1-2 slots available
 					-- Being conservative to avoid inventory-full errors
+					debug_logger.debug("COUNT_SLOTS_REMOTE: Slot %d first FULL (%s), last EMPTY - assuming 1 open slot", bag_slot, first_item)
 					open_slots = 1
 				else
 					-- First slot is empty: bag has space
+					debug_logger.debug("COUNT_SLOTS_REMOTE: Slot %d first EMPTY - assuming 30%% available", bag_slot)
 					open_slots = math.max(2, math.ceil(bag_info.total_slots * 0.3))
 				end
 			end
 			
+			debug_logger.debug("COUNT_SLOTS_REMOTE: Slot %d contributes %d open slots", bag_slot, open_slots)
 			available_slots = available_slots + open_slots
 		end
 	end
 	
+	debug_logger.info("COUNT_SLOTS_REMOTE: %s total available slots: %d", character_name, available_slots)
 	return available_slots
 end
 
