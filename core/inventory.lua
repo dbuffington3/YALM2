@@ -40,8 +40,8 @@ end
 local function cache_character_bags(character_name, dannet_delay)
 	local bag_cache = get_character_bag_cache(character_name)
 	
-	-- Query each bag slot (24-32)
-	for bag_slot = 24, 32 do
+	-- Query each bag slot (23-32) - slot 23 is first bag, slots 24-32 are additional bags
+	for bag_slot = 23, 32 do
 		-- Query bag name - returns NULL if no bag in slot
 		local bag_name = dannet.query(character_name, string.format("Me.Inventory[%d].Name", bag_slot), dannet_delay)
 		
@@ -59,8 +59,8 @@ local function cache_character_bags(character_name, dannet_delay)
 					bagtype = tonumber(bag_data.bagtype) or 0
 				end
 				
-				-- Query total slots in this bag
-				local total_slots_str = dannet.query(character_name, string.format("Me.Inventory[%d].Items", bag_slot), dannet_delay)
+				-- Query total slots in this bag (Container returns TOTAL slots, not current count)
+				local total_slots_str = dannet.query(character_name, string.format("Me.Inventory[%d].Container", bag_slot), dannet_delay)
 				local total_slots = tonumber(total_slots_str) or 0
 				
 				-- Cache this bag's info
