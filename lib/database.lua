@@ -118,7 +118,7 @@ YALM2_Database.QueryDatabaseForItemId = function(item_id)
 	
 	-- Query the columns we need using nrows() which returns named tables
 	local query = string.format(
-		"SELECT id, name, ac, hp, mana, endur, mr, fr, cr, pr, dr, attack, regen, manaregen, healamt, clairvoyance, reqlevel, classes, slots, itemtype, questitem, nodrop, guildfavor, cost, tradeskills, stacksize, collectible FROM raw_item_data WHERE id = %d LIMIT 1",
+		"SELECT id, name, ac, hp, mana, endur, mr, fr, cr, pr, dr, attack, regen, manaregen, healamt, clairvoyance, reqlevel, classes, slots, itemtype, questitem, nodrop, guildfavor, cost, tradeskills, stacksize, collectible, bagtype FROM raw_item_data WHERE id = %d LIMIT 1",
 		item_id
 	)
 	debug_logger.debug("DATABASE: Query: %s", query)
