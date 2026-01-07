@@ -206,8 +206,9 @@ end
 
 
 --- Check if an item is needed for any character's quests
+--- Check if an item is NEEDED by anyone for a quest
 function native_tasks.is_item_needed_for_quest(item_name)
-    Write.Debug("[NativeQuest] Checking if item is needed for quest: " .. item_name)
+    Write.Debug("[NativeQuest] Checking if item is needed by anyone: " .. item_name)
     
     -- Use live MQ2 variable reading like get_characters_needing_item does
     local all_items = {}
@@ -241,8 +242,25 @@ function native_tasks.is_item_needed_for_quest(item_name)
         end
         Write.Debug("[NativeQuest] Available quest items from MQ2: " .. table.concat(quest_item_names, ", "))
     else
-        Write.Debug("[NativeQuest] No quest data in MQ2 variables")
-        return false
+        Write.Debug("[NativeQuest] No quest data in MQ2 variables - falling back to quest database")
+        -- FALLBACK: If MQ2 variables aren't populated yet, use the quest database
+        local quest_db = require("yalm2.lib.quest_database")
+        if quest_db and quest_db.init() then
+            all_items = quest_db.get_all_quest_items()
+            if all_items and next(all_items) then
+                local quest_item_names = {}
+                for item_name, _ in pairs(all_items) do
+                    table.insert(quest_item_names, item_name)
+                end
+                Write.Debug("[NativeQuest] Using fallback quest items from database: " .. table.concat(quest_item_names, ", "))
+            else
+                Write.Debug("[NativeQuest] Quest database is empty - no quest items available")
+                return false
+            end
+        else
+            Write.Debug("[NativeQuest] No quest database available")
+            return false
+        end
     end
     
     -- Check exact match first

@@ -106,6 +106,10 @@ Item.ContentSize = function()
 	return Item.item_db.bagsize
 end
 
+Item.BagType = function()
+	return Item.item_db.bagtype
+end
+
 Item.Damage = function()
 	return Item.item_db.damage
 end

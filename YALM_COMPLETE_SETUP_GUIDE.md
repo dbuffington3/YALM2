@@ -128,9 +128,10 @@ Rogue          = 256 (bit 8)
 Shaman         = 512 (bit 9)
 Necromancer    = 1024 (bit 10)
 Wizard         = 2048 (bit 11)
-Enchanter      = 4096 (bit 12)
-Beastlord      = 8192 (bit 13)
-Berserker      = 16384 (bit 14)
+Magician       = 4096 (bit 12)
+Enchanter      = 8192 (bit 13)
+Beastlord      = 16384 (bit 14)
+Berserker      = 32768 (bit 15)
 ```
 
 **Example:** Bitmask 31 = binary `11111` = bits 0-4 set = Warrior, Cleric, Paladin, Ranger, Shadowknight all can use it

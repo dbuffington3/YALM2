@@ -423,8 +423,9 @@ return {
 		["unmatched_item_rule"] = {
 			["setting"] = "Keep",
 		},
-		["valuable_item_min_price"] = 100000,
+		["valuable_item_min_price"] = 10000,  -- 10pp in packed format (PPPPGGSC)
 		["valuable_item_min_stack"] = 1000,
+		["valuable_guildfavor_min"] = 1000,  -- Guild favor threshold for keeping items
 	},
 	["subcommands"] = {
 		["Add"] = {

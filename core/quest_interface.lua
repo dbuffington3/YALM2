@@ -35,11 +35,18 @@ end
 
 --- Check if an item is needed for quests
 quest_interface.is_quest_item = function(item_name)
-    if native_tasks and native_tasks.is_quest_item then
-        return native_tasks.is_quest_item(item_name)
-    else
-        debug_logger.warn("QUEST_INTERFACE: native_tasks module not available")
+    -- Check the questitem flag in the database - the authoritative source
+    local item_data = YALM2_Database.QueryDatabaseForItemName(item_name)
+    
+    if item_data and item_data.questitem then
+        local questitem_flag = tonumber(item_data.questitem) or 0
+        if questitem_flag == 1 then
+            debug_logger.info("QUEST_ITEM_CHECK: '%s' IS a quest item (questitem=1)", item_name)
+            return true
+        end
     end
+    
+    debug_logger.info("QUEST_ITEM_CHECK: '%s' is NOT a quest item", item_name)
     return false
 end
 
@@ -151,11 +158,65 @@ quest_interface.get_quest_characters_local = function(item_name)
     return needed_by
 end
 
+--- Helper function to check if a character is in our current group/raid
+--- Used to filter quest distribution to only group/raid members
+local function is_character_in_our_group(character_name)
+    if not character_name then
+        return false
+    end
+    
+    -- Check if it's ourselves
+    if character_name:lower() == mq.TLO.Me.DisplayName():lower() then
+        return true
+    end
+    
+    -- Raid takes priority - check raid members if in raid
+    if mq.TLO.Raid.Members() > 0 then
+        for i = 1, mq.TLO.Raid.Members() do
+            local member = mq.TLO.Raid.Member(i)
+            if member and member.DisplayName():lower() == character_name:lower() then
+                return true
+            end
+        end
+        -- In a raid but character not found - they're not in our raid
+        return false
+    end
+    
+    -- Not in raid - check group members
+    if mq.TLO.Group.Members() > 0 then
+        for i = 1, mq.TLO.Group.Members() do
+            local member = mq.TLO.Group.Member(i)
+            if member and member.DisplayName():lower() == character_name:lower() then
+                return true
+            end
+        end
+        -- In a group but character not found - they're not in our group
+        return false
+    end
+    
+    -- Solo (no group or raid) - only accept ourselves
+    return false
+end
+
 --- Get characters who need a specific quest item
 quest_interface.get_characters_needing_item = function(item_name)
     if native_tasks and native_tasks.get_characters_needing_item then
         local chars, task_name, objective = native_tasks.get_characters_needing_item(item_name)
-        return chars or {}
+        
+        -- CRITICAL FIX: Filter to only characters in our group/raid
+        local filtered_chars = {}
+        if chars then
+            for _, char_name in ipairs(chars) do
+                if is_character_in_our_group(char_name) then
+                    table.insert(filtered_chars, char_name)
+                    debug_logger.debug("QUEST_INTERFACE: Including %s (in our group/raid)", char_name)
+                else
+                    debug_logger.debug("QUEST_INTERFACE: Excluding %s (not in our group/raid)", char_name)
+                end
+            end
+        end
+        
+        return filtered_chars, task_name, objective
     else
         debug_logger.warn("QUEST_INTERFACE: native_tasks module not available")
     end
@@ -276,6 +337,45 @@ quest_interface.find_matching_quest_item = function(objective_text)
     
     -- Clean up the input: remove common words and punctuation
     local cleaned = objective_text
+    
+    -- FIRST: Extract quoted phrases BEFORE removing quotes
+    -- This preserves titles and proper names like "Expositions on Theology"  
+    -- For objectives like: Recover the book 'Niami's Tips for Delicious Baking'
+    -- We need to handle possessives correctly
+    local quoted_phrases = {}
+    
+    -- Key insight: In quest objectives, quoted phrases appear as 'TITLE'
+    -- The opening quote is after "the book" and the closing quote is at the end
+    -- For "Recover the book 'Niami's Tips for Delicious Baking'" we need 'Niami's Tips for Delicious Baking'
+    -- Strategy: Find opening quotes, then extract from there to the LAST quote in the objective
+    
+    local search_pos = 1
+    while true do
+        local open_quote = objective_text:find("'", search_pos)
+        if not open_quote then break end
+        
+        -- Find the LAST quote after this opening quote
+        -- We do this by looking for quotes from the end backwards
+        local close_quote = nil
+        for i = #objective_text, open_quote + 1, -1 do
+            if objective_text:sub(i, i) == "'" then
+                close_quote = i
+                break
+            end
+        end
+        
+        if close_quote and close_quote > open_quote then
+            local quoted_text = objective_text:sub(open_quote + 1, close_quote - 1)
+            if quoted_text and #quoted_text > 1 then
+                table.insert(quoted_phrases, quoted_text)
+            end
+            -- Move past this closing quote for next search
+            search_pos = close_quote + 1
+        else
+            break
+        end
+    end
+    
     -- Remove possessive markers
     cleaned = cleaned:gsub("'s", " ")
     cleaned = cleaned:gsub("'", " ")
@@ -283,6 +383,7 @@ quest_interface.find_matching_quest_item = function(objective_text)
     cleaned = cleaned:gsub("^[Ll]oot ", "", 1)
     cleaned = cleaned:gsub("^[Cc]ollect ", "", 1)
     cleaned = cleaned:gsub("^[Gg]ather ", "", 1)
+    cleaned = cleaned:gsub("^[Rr]ecover ", "", 1)
     -- Remove all numeric characters (quest objectives often have "loot 3 pieces" type phrasing)
     cleaned = cleaned:gsub("%d+", " ")
     -- Collapse multiple spaces
@@ -330,6 +431,16 @@ quest_interface.find_matching_quest_item = function(objective_text)
             local singular = singularize(word:lower())
             table.insert(filtered_words, singular)
         end
+    end
+    
+    -- ADD QUOTED PHRASES AS HIGH-PRIORITY SEARCH TERMS
+    -- These are proper names/titles that should be searched as-is
+    -- Example: 'Expositions on Theology' -> search for "Expositions on Theology"
+    if #quoted_phrases > 0 then
+        Write.Debug("ITEM_MATCH: Found %d quoted phrases: %s", #quoted_phrases, table.concat(quoted_phrases, " | "))
+    end
+    for _, phrase in ipairs(quoted_phrases) do
+        table.insert(filtered_words, 1, phrase:lower())  -- Insert at beginning for priority
     end
     
     -- Store filtered words for UI to access on failure

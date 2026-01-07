@@ -230,6 +230,22 @@ inventory.check_lore_equip_prompt = function()
 	end
 end
 
+-- Simple function: Get total free inventory slots without bag-type awareness
+-- This is MUCH faster than counting individual bags
+inventory.get_total_free_slots = function(character_name, dannet_delay)
+	if character_name == mq.TLO.Me.DisplayName() then
+		-- Local character: direct query
+		local total_slots = mq.TLO.Me.Inventory() or 0
+		local used_slots = mq.TLO.Me.Inventory.Items() or 0
+		return math.max(0, total_slots - used_slots)
+	else
+		-- Remote character: DanNet query
+		local total_slots = tonumber(dannet.query(character_name, "Me.Inventory", dannet_delay)) or 0
+		local used_slots = tonumber(dannet.query(character_name, "Me.Inventory.Items", dannet_delay)) or 0
+		return math.max(0, total_slots - used_slots)
+	end
+end
+
 inventory.check_quantity = function(member, item, quantity, dannet_delay, always_loot)
 	local count, bankcount
 
@@ -260,34 +276,14 @@ inventory.check_quantity = function(member, item, quantity, dannet_delay, always
 	return true
 end
 
-inventory.count_open_slots_in_bag = function(bag_slot)
-	--[[
-	Count the number of open slots in a specific bag (inventory slot)
-	Returns: number of empty slots, or 0 if not a container
-	]]
-	local bag = mq.TLO.Me.Inventory(bag_slot)
-	if not bag() then
-		return 0
-	end
-	
-	local container_slots = tonumber(bag.Container()) or 0
-	if container_slots <= 0 then
-		return 0  -- Not a container
-	end
-	
-	local items_in_bag = tonumber(bag.Items()) or 0
-	return math.max(0, container_slots - items_in_bag)
-end
-
 inventory.count_available_slots_for_item = function(item_id)
 	--[[
-	Count how many slots are available for a specific item across all bags
+	Count how many slots are available for a specific item locally
 	
-	Logic:
-	- If item is tradeskill (tradeskills=1): can use tradeskill bags OR general bags
-	- If item is NOT tradeskill (tradeskills=0): can ONLY use general bags
-	
-	This prevents the ML from thinking it has room when only tradeskill bags are empty
+	Simple approach:
+	1. Get total FreeInventory (works across all bags)
+	2. If item is tradeskill: return FreeInventory directly
+	3. If item is NOT tradeskill: subtract tradeskill-only bag free slots
 	
 	Returns: number of available slots that can hold this item
 	]]
@@ -298,48 +294,50 @@ inventory.count_available_slots_for_item = function(item_id)
 	end
 	
 	local is_tradeskill = (tonumber(item_data.tradeskills) or 0) > 0
-	local available_slots = 0
 	
-	-- Scan bags in order (24 = first bag, 32 = typically last)
-	for bag_slot = 24, 32 do
+	-- Get total free inventory slots
+	local total_free = mq.TLO.Me.FreeInventory()
+	
+	-- If tradeskill item, can use any bag
+	if is_tradeskill then
+		return total_free
+	end
+	
+	-- Non-tradeskill item: need to subtract tradeskill-only bag free slots
+	local tradeskill_bag_free_slots = 0
+	
+	-- Scan bags for tradeskill-only bags
+	for bag_slot = 23, 32 do
 		local bag = mq.TLO.Me.Inventory(bag_slot)
 		if bag() then
-			-- Get the bag's type from the item database
 			local bag_id = bag.ID()
 			local bag_data = YALM2_Database.QueryDatabaseForItemId(bag_id)
-			local bagtype = 0
 			
 			if bag_data then
-				bagtype = tonumber(bag_data.bagtype) or 0
-			end
-			
-			local is_tradeskill_bag = (bagtype == 58)
-			local open_slots = inventory.count_open_slots_in_bag(bag_slot)
-			
-			-- Count open slots in this bag if it can hold this item
-			if is_tradeskill then
-				-- Tradeskill items: can go in ANY bag
-				available_slots = available_slots + open_slots
-			else
-				-- Non-tradeskill items: only go in non-tradeskill bags
-				if not is_tradeskill_bag then
-					available_slots = available_slots + open_slots
+				local bagtype = tonumber(bag_data.bagtype) or 0
+				if bagtype == 58 then
+					-- This is a tradeskill-only bag, count its free slots
+					local total_slots = bag.Container() or 0
+					local used_slots = bag.Items() or 0
+					local free_in_bag = math.max(0, total_slots - used_slots)
+					tradeskill_bag_free_slots = tradeskill_bag_free_slots + free_in_bag
 				end
 			end
 		end
 	end
 	
-	return available_slots
+	-- Non-tradeskill slots = total free - tradeskill-only bag free
+	return math.max(0, total_free - tradeskill_bag_free_slots)
 end
 
---[[
-	Count available inventory slots for a remote character via DanNet
+inventory.count_available_slots_for_item_remote = function(character_name, item_id, dannet_delay)
+	--[[
+	Count available slots for a remote character, respecting bag type constraints
 	
-	This uses a cached bag configuration (built at startup/first-use) to determine
-	which bags can hold which items. Avoids repeated DanNet queries for bag info.
-	
-	The only per-call query is UsedSlots (changes frequently).
-	Bag type/structure is cached (changes rarely).
+	Simple approach:
+	1. Get total FreeInventory (works across all bags)
+	2. If item is tradeskill: return FreeInventory directly
+	3. If item is NOT tradeskill: subtract tradeskill-only bag free slots
 	
 	Args:
 		character_name (string): Name of remote character
@@ -348,89 +346,66 @@ end
 	
 	Returns:
 		(int) Number of available slots that can hold this item
-]]
-inventory.count_available_slots_for_item_remote = function(character_name, item_id, dannet_delay)
+	]]
+	
 	if not character_name or not item_id then
 		debug_logger.warn("COUNT_SLOTS_REMOTE: character_name=%s, item_id=%s - returning 0", tostring(character_name), tostring(item_id))
 		return 0
 	end
 	
+	-- Query item data to check if tradeskill
 	local item_data = YALM2_Database.QueryDatabaseForItemId(item_id)
-	
 	if not item_data then
 		debug_logger.warn("COUNT_SLOTS_REMOTE: item_id=%d not found in database - returning 0", item_id)
 		return 0
 	end
 	
 	local is_tradeskill = (tonumber(item_data.tradeskills) or 0) > 0
-	debug_logger.info("COUNT_SLOTS_REMOTE: %s for %s (ID: %d, tradeskill=%s)", character_name, item_data.name, item_id, tostring(is_tradeskill))
 	
-	-- Get cached bag info for this character, building cache if needed
+	-- Get total free inventory slots
+	local total_free = tonumber(dannet.query(character_name, "Me.FreeInventory", dannet_delay)) or 0
+	
+	debug_logger.info("COUNT_SLOTS_REMOTE: %s - item: %s (ID: %d, tradeskill=%s), total_free: %d", 
+		character_name, item_data.name, item_id, tostring(is_tradeskill), total_free)
+	
+	-- If tradeskill item, can use any bag
+	if is_tradeskill then
+		return total_free
+	end
+	
+	-- Non-tradeskill item: need to subtract tradeskill-only bag free slots
+	local tradeskill_bag_free_slots = 0
+	
+	-- Get cached bag info
 	local bag_cache = get_character_bag_cache(character_name)
-	
-	-- If cache is empty, scan bags first
 	if utils.length(bag_cache) == 0 then
+		-- Build cache if needed
 		debug_logger.info("COUNT_SLOTS_REMOTE: Building bag cache for %s", character_name)
 		cache_character_bags(character_name, dannet_delay)
 		bag_cache = get_character_bag_cache(character_name)
-		debug_logger.info("COUNT_SLOTS_REMOTE: Cache built, %d bags found", utils.length(bag_cache))
-	else
-		debug_logger.info("COUNT_SLOTS_REMOTE: Using existing cache for %s with %d bags", character_name, utils.length(bag_cache))
 	end
 	
-	local available_slots = 0
-	
-	-- For each cached bag, count available slots
+	-- Find tradeskill-only bags and sum their free slots
 	for bag_slot, bag_info in pairs(bag_cache) do
-		-- Determine if this bag can hold the item
-		local can_use_this_bag = false
-		
-		if is_tradeskill then
-			-- Tradeskill items: can go in ANY bag
-			can_use_this_bag = true
-		else
-			-- Non-tradeskill items: only go in non-tradeskill bags
-			can_use_this_bag = not bag_info.is_tradeskill_bag
-		end
-		
-		debug_logger.debug("COUNT_SLOTS_REMOTE: Bag slot %d: type=%d, total=%d, can_use=%s", 
-			bag_slot, bag_info.bagtype, bag_info.total_slots, tostring(can_use_this_bag))
-		
-		-- If this bag can hold the item, estimate used slots from available queries
-		if can_use_this_bag then
-			-- Since UsedSlots doesn't work remotely, be VERY CONSERVATIVE
-			-- Strategy: Check last slot (indicator of fullness) and first slot (indicator of space)
-			local last_slot_query = string.format("Me.Inventory[%d].Item[%d]", bag_slot, bag_info.total_slots)
-			local last_item = dannet.query(character_name, last_slot_query, dannet_delay)
+		if bag_info.is_tradeskill_bag then
+			-- This is a tradeskill-only bag, query its free slots
+			local bag_total = tonumber(bag_info.total_slots) or 0
+			local bag_used = tonumber(dannet.query(character_name, 
+				string.format("Me.Inventory[%d].Items", bag_slot), dannet_delay)) or 0
+			local bag_free = math.max(0, bag_total - bag_used)
 			
-			local open_slots = 0
-			if last_item and last_item ~= "NULL" and last_item ~= "" then
-				-- Last slot has an item = bag is full (or nearly full)
-				-- Be conservative: assume NO available slots
-				open_slots = 0
-			else
-				-- Last slot is empty - but bag might still be mostly full
-				-- Check first slot to determine actual space level
-				local first_slot_query = string.format("Me.Inventory[%d].Item[1]", bag_slot)
-				local first_item = dannet.query(character_name, first_slot_query, dannet_delay)
-				
-				if first_item and first_item ~= "NULL" and first_item ~= "" then
-					-- First slot has item, last doesn't = bag is almost full
-					-- Only 1-2 slots available (very conservative)
-					open_slots = 1
-				else
-					-- First slot is empty = bag has significant space
-					-- Estimate 30% of bag size as available
-					open_slots = math.max(2, math.ceil(bag_info.total_slots * 0.3))
-				end
-			end
-			
-			available_slots = available_slots + open_slots
+			debug_logger.debug("COUNT_SLOTS_REMOTE: Tradeskill bag slot %d has %d free slots", bag_slot, bag_free)
+			tradeskill_bag_free_slots = tradeskill_bag_free_slots + bag_free
 		end
 	end
 	
-	debug_logger.debug("COUNT_SLOTS_REMOTE: %s for %s - total available slots: %d", character_name, item_data.name, available_slots)
-	return available_slots
+	-- Non-tradeskill slots = total free - tradeskill-only bag free
+	local available_for_non_tradeskill = math.max(0, total_free - tradeskill_bag_free_slots)
+	
+	debug_logger.info("COUNT_SLOTS_REMOTE: %s - total_free: %d, tradeskill_bag_free: %d, non_tradeskill_available: %d",
+		character_name, total_free, tradeskill_bag_free_slots, available_for_non_tradeskill)
+	
+	return available_for_non_tradeskill
 end
 
 inventory.verify_tradeskill_bag_placement = function()

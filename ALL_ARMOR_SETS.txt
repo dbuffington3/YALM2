@@ -1,0 +1,386 @@
+Abstruse
+Adamant Triumphant Cloud Arms
+Adamant Triumphant Cloud Chest
+Adamant Triumphant Cloud Feet
+Adamant Triumphant Cloud Hands
+Adamant Triumphant Cloud Head
+Adamant Triumphant Cloud Legs
+Adamant Triumphant Cloud Wrist
+Ambiguous
+Amorphous Cohort Arms
+Amorphous Cohort Chest
+Amorphous Cohort Feet
+Amorphous Cohort Hands
+Amorphous Cohort Head
+Amorphous Cohort Legs
+Amorphous Cohort Wrist
+Amorphous Selrach Arms
+Amorphous Selrach Chest
+Amorphous Selrach Feet
+Amorphous Selrach Hands
+Amorphous Selrach Head
+Amorphous Selrach Legs
+Amorphous Selrach Wrist
+Amorphous Velazul Arms
+Amorphous Velazul Chest
+Amorphous Velazul Feet
+Amorphous Velazul Hands
+Amorphous Velazul Head
+Amorphous Velazul Legs
+Amorphous Velazul Wrist
+Battleworn Stalwart Moon Arms
+Battleworn Stalwart Moon Chest
+Battleworn Stalwart Moon Feet
+Battleworn Stalwart Moon Hands
+Battleworn Stalwart Moon Head
+Battleworn Stalwart Moon Legs
+Battleworn Stalwart Moon Wrist
+Boreal
+Castaway Arms
+Castaway Chest
+Castaway Feet
+Castaway Hands
+Castaway Head
+Castaway Legs
+Castaway Wrist
+Celestrium Encrusted Brachial Clay
+Celestrium Encrusted Carpal Clay
+Celestrium Encrusted Cephalic Clay
+Celestrium Encrusted Crural Clay
+Celestrium Encrusted Phalangeal Clay
+Celestrium Encrusted Tarsal Clay
+Celestrium Encrusted Thoracic Clay
+Damascite Encrusted Brachial Clay
+Damascite Encrusted Carpal Clay
+Damascite Encrusted Cephalic Clay
+Damascite Encrusted Crural Clay
+Damascite Encrusted Phalangeal Clay
+Damascite Encrusted Tarsal Clay
+Damascite Encrusted Thoracic Clay
+Darkwater Arms
+Darkwater Chest
+Darkwater Feet
+Darkwater Hands
+Darkwater Head
+Darkwater Legs
+Darkwater Wrist
+Distorted
+Distorted Coeval Incandessence
+Distorted Coeval Luminessence
+Distorted Eternal Incandessence
+Distorted Eternal Luminessence
+Distorted Medial Incandessence
+Distorted Medial Luminessence
+Distorted Primeval Incandessence
+Distorted Primeval Luminessence
+Distorted Seminal Incandessence
+Distorted Seminal Luminessence
+Dread
+Dread Infused
+Dread Touched
+Dread Washed
+Elegant of Oseka
+Embellished
+Embellished of Kolos
+Enigmatic
+Esoteric
+Faded Ascending Spirit Arms
+Faded Ascending Spirit Chest
+Faded Ascending Spirit Feet
+Faded Ascending Spirit Hands
+Faded Ascending Spirit Head
+Faded Ascending Spirit Legs
+Faded Ascending Spirit Wrist
+Faded Blizzard Arms
+Faded Blizzard Chest
+Faded Blizzard Feet
+Faded Blizzard Hands
+Faded Blizzard Head
+Faded Blizzard Legs
+Faded Blizzard Wrist
+Faded Celestial Zenith Arms
+Faded Celestial Zenith Chest
+Faded Celestial Zenith Feet
+Faded Celestial Zenith Hands
+Faded Celestial Zenith Head
+Faded Celestial Zenith Legs
+Faded Celestial Zenith Wrist
+Faded Hoarfrost Arms
+Faded Hoarfrost Chest
+Faded Hoarfrost Feet
+Faded Hoarfrost Hands
+Faded Hoarfrost Head
+Faded Hoarfrost Legs
+Faded Hoarfrost Wrist
+Faded Ice Woven Arms
+Faded Ice Woven Chest
+Faded Ice Woven Feet
+Faded Ice Woven Hands
+Faded Ice Woven Head
+Faded Ice Woven Legs
+Faded Ice Woven Wrist
+Faded Icebound Arms
+Faded Icebound Chest
+Faded Icebound Feet
+Faded Icebound Hands
+Faded Icebound Head
+Faded Icebound Legs
+Faded Icebound Wrist
+Faded Snowbound Arms
+Faded Snowbound Chest
+Faded Snowbound Feet
+Faded Snowbound Hands
+Faded Snowbound Head
+Faded Snowbound Legs
+Faded Snowbound Wrist
+Faded Snowsquall Arms
+Faded Snowsquall Chest
+Faded Snowsquall Feet
+Faded Snowsquall Hands
+Faded Snowsquall Head
+Faded Snowsquall Legs
+Faded Snowsquall Wrist
+Faded Spectral Luminosity Arms
+Faded Spectral Luminosity Chest
+Faded Spectral Luminosity Feet
+Faded Spectral Luminosity Hands
+Faded Spectral Luminosity Head
+Faded Spectral Luminosity Legs
+Faded Spectral Luminosity Wrist
+Faded Waning Crescent Arms
+Faded Waning Crescent Chest
+Faded Waning Crescent Feet
+Faded Waning Crescent Hands
+Faded Waning Crescent Head
+Faded Waning Crescent Legs
+Faded Waning Crescent Wrist
+Faded Waning Gibbous Arms
+Faded Waning Gibbous Chest
+Faded Waning Gibbous Feet
+Faded Waning Gibbous Hands
+Faded Waning Gibbous Head
+Faded Waning Gibbous Legs
+Faded Waning Gibbous Wrist
+Faded Waxing Crescent Arms
+Faded Waxing Crescent Chest
+Faded Waxing Crescent Feet
+Faded Waxing Crescent Hands
+Faded Waxing Crescent Head
+Faded Waxing Crescent Legs
+Faded Waxing Crescent Wrist
+Fear Infused
+Fear Stained
+Fear Touched
+Fear Washed
+Flowing Ether Arms
+Flowing Ether Chest
+Flowing Ether Feet
+Flowing Ether Hands
+Flowing Ether Head
+Flowing Ether Legs
+Flowing Ether Wrist
+Formal
+Formal of Lunanyn
+Fractured Coeval Incandessence
+Fractured Coeval Luminessence
+Fractured Eternal Incandessence
+Fractured Eternal Luminessence
+Fractured Medial Incandessence
+Fractured Medial Luminessence
+Fractured Primeval Incandessence
+Fractured Primeval Luminessence
+Fractured Seminal Incandessence
+Fractured Seminal Luminessence
+Grandiose
+Grandiose of Alra
+Heavenly Glorious Void Arms
+Heavenly Glorious Void Chest
+Heavenly Glorious Void Feet
+Heavenly Glorious Void Hands
+Heavenly Glorious Void Head
+Heavenly Glorious Void Legs
+Heavenly Glorious Void Wrist
+Highwater Arms
+Highwater Chest
+Highwater Feet
+Highwater Hands
+Highwater Head
+Highwater Legs
+Highwater Wrist
+Iridium Encrusted Brachial Clay
+Iridium Encrusted Carpal Clay
+Iridium Encrusted Cephalic Clay
+Iridium Encrusted Crural Clay
+Iridium Encrusted Phalangeal Clay
+Iridium Encrusted Tarsal Clay
+Iridium Encrusted Thoracic Clay
+Latent Ether Arms
+Latent Ether Chest
+Latent Ether Feet
+Latent Ether Hands
+Latent Ether Head
+Latent Ether Legs
+Latent Ether Wrist
+Lucid
+Manifested Ether Arms
+Manifested Ether Chest
+Manifested Ether Feet
+Manifested Ether Hands
+Manifested Ether Head
+Manifested Ether Legs
+Manifested Ether Wrist
+Modest of Illdaera
+Obscure
+Obscured Gallant Resonance Arms
+Obscured Gallant Resonance Chest
+Obscured Gallant Resonance Feet
+Obscured Gallant Resonance Hands
+Obscured Gallant Resonance Head
+Obscured Gallant Resonance Legs
+Obscured Gallant Resonance Wrist
+Obscured Heroic Reflections Arms
+Obscured Heroic Reflections Chest
+Obscured Heroic Reflections Feet
+Obscured Heroic Reflections Hands
+Obscured Heroic Reflections Head
+Obscured Heroic Reflections Legs
+Obscured Heroic Reflections Wrist
+Obscured of the Bound Arms
+Obscured of the Bound Chest
+Obscured of the Bound Feet
+Obscured of the Bound Hands
+Obscured of the Bound Head
+Obscured of the Bound Legs
+Obscured of the Bound Wrist
+Obscured of the Enthralled Arms
+Obscured of the Enthralled Chest
+Obscured of the Enthralled Feet
+Obscured of the Enthralled Hands
+Obscured of the Enthralled Head
+Obscured of the Enthralled Legs
+Obscured of the Enthralled Wrist
+Obscured of the Shackled Arms
+Obscured of the Shackled Chest
+Obscured of the Shackled Feet
+Obscured of the Shackled Hands
+Obscured of the Shackled Head
+Obscured of the Shackled Legs
+Obscured of the Shackled Wrist
+Obscured Steadfast Resolve Arms
+Obscured Steadfast Resolve Chest
+Obscured Steadfast Resolve Feet
+Obscured Steadfast Resolve Hands
+Obscured Steadfast Resolve Head
+Obscured Steadfast Resolve Legs
+Obscured Steadfast Resolve Wrist
+Ostentatious of Ryken
+Palladium Encrusted Brachial Clay
+Palladium Encrusted Carpal Clay
+Palladium Encrusted Cephalic Clay
+Palladium Encrusted Crural Clay
+Palladium Encrusted Phalangeal Clay
+Palladium Encrusted Tarsal Clay
+Palladium Encrusted Thoracic Clay
+Perspicuous
+Phased Coeval Incandessence
+Phased Coeval Luminessence
+Phased Eternal Incandessence
+Phased Eternal Luminessence
+Phased Medial Incandessence
+Phased Medial Luminessence
+Phased Primeval Incandessence
+Phased Primeval Luminessence
+Phased Seminal Incandessence
+Phased Seminal Luminessence
+Raw Crypt-Hunter Arms
+Raw Crypt-Hunter Chest
+Raw Crypt-Hunter Feet
+Raw Crypt-Hunter Hands
+Raw Crypt-Hunter Head
+Raw Crypt-Hunter Legs
+Raw Crypt-Hunter Wrist
+Recondite
+Rhodium Encrusted Brachial Clay
+Rhodium Encrusted Carpal Clay
+Rhodium Encrusted Cephalic Clay
+Rhodium Encrusted Crural Clay
+Rhodium Encrusted Phalangeal Clay
+Rhodium Encrusted Tarsal Clay
+Rhodium Encrusted Thoracic Clay
+Rustic
+Rustic of Argath
+Scale Touched Arms
+Scale Touched Chest
+Scale Touched Feet
+Scale Touched Hands
+Scale Touched Head
+Scale Touched Legs
+Scale Touched Wrist
+Scaleborn Arms
+Scaleborn Chest
+Scaleborn Feet
+Scaleborn Hands
+Scaleborn Head
+Scaleborn Legs
+Scaleborn Wrist
+Scaled Arms
+Scaled Chest
+Scaled Feet
+Scaled Hands
+Scaled Head
+Scaled Legs
+Scaled Wrist
+Stately of Ladrys
+Stellite Encrusted Brachial Clay
+Stellite Encrusted Carpal Clay
+Stellite Encrusted Cephalic Clay
+Stellite Encrusted Crural Clay
+Stellite Encrusted Phalangeal Clay
+Stellite Encrusted Tarsal Clay
+Stellite Encrusted Thoracic Clay
+Suppressed Ether Arms
+Suppressed Ether Chest
+Suppressed Ether Feet
+Suppressed Ether Hands
+Suppressed Ether Head
+Suppressed Ether Legs
+Suppressed Ether Wrist
+Tideworn Arms
+Tideworn Chest
+Tideworn Feet
+Tideworn Hands
+Tideworn Head
+Tideworn Legs
+Tideworn Wrist
+Twilight
+Veiled Victorious Horizon Arms
+Veiled Victorious Horizon Chest
+Veiled Victorious Horizon Feet
+Veiled Victorious Horizon Hands
+Veiled Victorious Horizon Head
+Veiled Victorious Horizon Legs
+Veiled Victorious Horizon Wrist
+Vitallium Encrusted Brachial Clay
+Vitallium Encrusted Carpal Clay
+Vitallium Encrusted Cephalic Clay
+Vitallium Encrusted Crural Clay
+Vitallium Encrusted Phalangeal Clay
+Vitallium Encrusted Tarsal Clay
+Vitallium Encrusted Thoracic Clay
+Warped Coeval Incandessence
+Warped Coeval Luminessence
+Warped Eternal Incandessence
+Warped Eternal Luminessence
+Warped Medial Incandessence
+Warped Medial Luminessence
+Warped Primeval Incandessence
+Warped Primeval Luminessence
+Warped Seminal Incandessence
+Warped Seminal Luminessence
+Weeping Undefeated Heaven Arms
+Weeping Undefeated Heaven Chest
+Weeping Undefeated Heaven Feet
+Weeping Undefeated Heaven Hands
+Weeping Undefeated Heaven Head
+Weeping Undefeated Heaven Legs
+Weeping Undefeated Heaven Wrist

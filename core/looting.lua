@@ -878,12 +878,38 @@ local item_cost = loot_item and loot_item.item_db and (tonumber(loot_item.item_d
 	-- so that armor items are processed BEFORE preference evaluation
 
 	for _, test_member in ipairs(member_list) do
-		can_loot, check_rematch, preference =
-			evaluate.check_can_loot(test_member, item, loot, save_slots, dannet_delay, always_loot, unmatched_item_rule)
+		-- EARLY INVENTORY CHECK: Skip members who don't have room for this item BEFORE evaluating preferences
+		-- This ensures we never assign items to full characters, even if preferences match
+		local member_name = test_member.Name()
+		local member_has_space = true
+		
+		if member_name ~= mq.TLO.Me.DisplayName() then
+			-- Remote character: check available slots for THIS SPECIFIC ITEM TYPE
+			local available_slots = inventory.count_available_slots_for_item_remote(member_name, item.ID(), dannet_delay)
+			
+			-- Also need to account for save_slots requirement
+			local total_save_slots = inventory.check_total_save_slots(test_member, char_settings or {}, save_slots, dannet_delay)
+			
+			if available_slots <= total_save_slots then
+				-- Not enough space: skip this member
+				debug_logger.info("EARLY_INVENTORY_CHECK: %s has no space for %s (available=%d, save_slots=%d)", 
+					member_name, item.Name() or "unknown", available_slots, total_save_slots)
+				member_has_space = false
+			else
+				debug_logger.debug("EARLY_INVENTORY_CHECK: %s has space for %s (available=%d, save_slots=%d)", 
+					member_name, item.Name() or "unknown", available_slots, total_save_slots)
+			end
+		end
+		
+		-- Only evaluate this member if they have space
+		if member_has_space then
+			can_loot, check_rematch, preference =
+				evaluate.check_can_loot(test_member, item, loot, save_slots, dannet_delay, always_loot, unmatched_item_rule)
 
-		if can_loot then
-			selected_member = test_member
-			break
+			if can_loot then
+				selected_member = test_member
+				break
+			end
 		end
 	end
 

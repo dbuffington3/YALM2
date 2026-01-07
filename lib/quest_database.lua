@@ -335,10 +335,85 @@ function quest_db.clear_objective_cache()
         return false
     end
     
-    db:exec("DELETE FROM quest_objectives")
+    -- Delete all cached objectives from quest_objectives table
+    -- These are fuzzy-matched objective texts - we'll regenerate them on next refresh
+    -- Add retry logic in case of database lock
+    local max_retries = 3
+    local retry_count = 0
+    local success = false
     
-    Write.Info("[QuestDB] Cleared quest objectives cache for fresh matching")
+    while retry_count < max_retries and not success do
+        local ok, err = pcall(function()
+            db:exec("DELETE FROM quest_objectives")
+        end)
+        
+        if ok then
+            success = true
+            Write.Info("[QuestDB] Cleared quest_objectives cache for fresh matching")
+        else
+            retry_count = retry_count + 1
+            if retry_count < max_retries then
+                Write.Warn("[QuestDB] Database locked during cache clear (attempt %d/%d), retrying...", retry_count, max_retries)
+                mq.delay(500)  -- Wait 500ms before retry
+            else
+                Write.Error("[QuestDB] Failed to clear quest_objectives cache after %d attempts: %s", max_retries, err)
+            end
+        end
+    end
+    
+    -- Delete ALL entries from quest_tasks
+    -- This table is only used to track "what items do we need right now"
+    -- Since all characters will repush their current task status on the next refresh,
+    -- we can safely clear this at startup to prevent database bloat from accumulating
+    -- completed entries that never get used (queries filter them out anyway)
+    retry_count = 0
+    success = false
+    
+    while retry_count < max_retries and not success do
+        local ok, err = pcall(function()
+            db:exec("DELETE FROM quest_tasks")
+        end)
+        
+        if ok then
+            success = true
+            Write.Info("[QuestDB] Cleared quest_tasks to prevent database bloat - will be repopulated on next refresh")
+        else
+            retry_count = retry_count + 1
+            if retry_count < max_retries then
+                Write.Warn("[QuestDB] Database locked during quest_tasks clear (attempt %d/%d), retrying...", retry_count, max_retries)
+                mq.delay(500)  -- Wait 500ms before retry
+            else
+                Write.Error("[QuestDB] Failed to clear quest_tasks after %d attempts: %s", max_retries, err)
+            end
+        end
+    end
+    
     return true
+end
+
+--- Delete a single objective from the cache
+--- Called when a quest objective is no longer active (stage completed)
+--- @param objective_text string - The objective text to remove from cache
+function quest_db.delete_objective_cache_entry(objective_text)
+    if not objective_text then
+        return false
+    end
+    
+    local db = get_db()
+    if not db then
+        return false
+    end
+    
+    local delete_sql = "DELETE FROM quest_objectives WHERE objective = ?"
+    local stmt = db:prepare(delete_sql)
+    if stmt then
+        stmt:bind_values(objective_text)
+        local result = stmt:step()
+        stmt:finalize()
+        return result == sql.DONE
+    end
+    
+    return false
 end
 
 --- Verify cache was cleared and log count
@@ -349,8 +424,33 @@ function quest_db.verify_cache_clear()
     end
     
     local count = 0
-    for row in db:nrows("SELECT COUNT(*) as cnt FROM quest_objectives") do
-        count = row.cnt
+    local max_retries = 5
+    local retry_count = 0
+    local retry_delay = 100  -- milliseconds
+    
+    while retry_count < max_retries do
+        local success, err = pcall(function()
+            for row in db:nrows("SELECT COUNT(*) as cnt FROM quest_objectives") do
+                count = row.cnt
+            end
+        end)
+        
+        if success then
+            break
+        else
+            if err and tostring(err):match("database is locked") then
+                retry_count = retry_count + 1
+                if retry_count < max_retries then
+                    mq.delay(retry_delay)
+                else
+                    Write.Error("[QuestDB] Failed to verify cache clear after %d retries - database locked", max_retries)
+                    return -1
+                end
+            else
+                Write.Error("[QuestDB] Error verifying cache clear: %s", tostring(err))
+                return -1
+            end
+        end
     end
     
     if count > 0 then
@@ -512,13 +612,20 @@ function quest_db.increment_quantity_received(character_name, item_name)
     end
     stmt:finalize()
     
+    -- If no status found, skip incrementing (item not in tracked quests)
+    if current_status == "" or current_status == "Done" then
+        debug_logger.debug("[QuestDB] Skipping increment for %s (status: %s) - not a tracked quest item", item_name, current_status)
+        return true  -- Not an error, just not tracked in quests
+    end
+    
     -- Parse the status string (e.g., "0/2" or "1/3")
     local received, needed = current_status:match("(%d+)/(%d+)")
     
     if not received or not needed then
-        -- If status doesn't match the pattern, can't increment
-        Write.Error("[QuestDB] Cannot parse status for %s: %s", item_name, current_status)
-        return false
+        -- If status doesn't match the pattern, can't increment - but don't error out
+        -- This can happen if item was distributed but not via the quest system
+        debug_logger.warn("[QuestDB] Cannot parse status for %s: '%s' (expected format: 'X/Y')", item_name, current_status)
+        return true  -- Return true since this isn't a critical error
     end
     
     received = tonumber(received)

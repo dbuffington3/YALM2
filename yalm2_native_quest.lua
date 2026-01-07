@@ -103,6 +103,7 @@ local task_data = {
     my_tasks = {},   -- This character's tasks
 }
 
+local known_collectors = {}  -- Track which collectors this master started (prevents cross-group pollution)
 local peer_list = {}
 local triggers = {
     do_refresh = false,
@@ -117,6 +118,7 @@ local ui_view_mode = 0
 
 -- Failed objective tracking for graceful failure
 -- Maps objective text → {filtered_words, custom_search_term (optional)}
+-- NOTE: This table is cleared at startup along with the database cache
 local failed_objectives = {}
 
 -- UI state for failed objectives
@@ -136,16 +138,28 @@ local function extract_quest_item_from_objective(objective_text)
         return nil 
     end
     
+    -- Skip delivery/turn-in objectives that shouldn't be parsed as item requirements
+    if objective_text:match("^[Bb]ring") then
+        return nil
+    end
+    
     -- Pattern to extract item names from gather objectives
     -- For possessive patterns like "Loot the bone golem's bones", we want to extract
     -- the WHOLE possessive phrase "bone golem's bones" so fuzzy matching can work with it
     local patterns = {
+        -- Quoted phrase patterns (highest priority - these are item titles/names in quotes)
+        -- "Recover the book 'Niami's Tips for Delicious Baking'" → 'Niami's Tips for Delicious Baking'
+        -- "Recover the book 'Expositions on Theology'" → 'Expositions on Theology'
+        "'([^']+)'",                       -- Extract anything in single quotes (including possessives)
+        
         -- Possessive patterns: Extract the whole "X's Y" phrase including the possessive
         -- "Loot the bone golem's bones" → "bone golem's bones" (let fuzzy matching handle cleanup)
         "Loot the (.+['''].+)",            -- "Loot the bone golem's bones"
         "Collect the (.+['''].+)",         -- "Collect the X's Y"
         "Gather the (.+['''].+)",          -- "Gather the X's Y"
+        "Recover the (.+['''].+)",         -- "Recover the X's Y"
         
+        "[Rr]etr[ie][ie]ve one of (.+['''].+)",  -- "Retrieve one of Faernoc's fang" (handles typos: Retreive, RetrIeve, etc.)
         "Gather some (.+) from",           -- "Gather some Orbweaver Silks from the orbweaver spiders"
         "Collect %d+ ?(.+) from",          -- "Collect 5 Bone Fragments from skeletons"
         "Loot %d+ ?(.+) from",             -- "Loot 4 antheia bloom seeds from the rotdogs"
@@ -305,20 +319,83 @@ local function get_tasks()
     return tasks
 end
 
+--- Check if a character is in our current group/raid
+--- This ensures we only process quest data from characters we're actually grouped with
+local function is_character_in_our_group(character_name)
+    if not character_name then
+        return false
+    end
+    
+    -- Check if it's ourselves
+    if character_name:lower() == my_name:lower() then
+        return true
+    end
+    
+    -- Raid takes priority - check raid members if in raid
+    if mq.TLO.Raid.Members() > 0 then
+        for i = 1, mq.TLO.Raid.Members() do
+            local member = mq.TLO.Raid.Member(i)
+            if member and member.DisplayName():lower() == character_name:lower() then
+                return true
+            end
+        end
+        -- In a raid but character not found - they're not in our raid
+        return false
+    end
+    
+    -- Not in raid - check group members
+    if mq.TLO.Group.Members() > 0 then
+        for i = 1, mq.TLO.Group.Members() do
+            local member = mq.TLO.Group.Member(i)
+            if member and member.DisplayName():lower() == character_name:lower() then
+                return true
+            end
+        end
+        -- In a group but character not found - they're not in our group
+        return false
+    end
+    
+    -- Solo (no group or raid) - only accept ourselves
+    return false
+end
+
 -- Message handler (TaskHUD's exact pattern) - using anonymous registration  
 local actor = actors.register(function(message)
     -- Add error handling to prevent coroutine issues
     local success, err = pcall(function()
         if message.content.id == 'REQUEST_TASKS' then
             triggers.need_task_update = true
+            local master_tasks = nil
+            -- Save master's tasks before clearing (if this is the master)
+            if drawGUI == true and task_data.tasks[my_name] then
+                master_tasks = task_data.tasks[my_name]
+            end
             peer_list = {}
             task_data.tasks = {}
+            -- Restore master's tasks
+            if master_tasks then
+                task_data.tasks[my_name] = master_tasks
+                table.insert(peer_list, my_name)
+            end
             
         elseif message.content.id == 'INCOMING_TASKS' then
             if drawGUI == true then  -- Only UI instance processes incoming tasks
-                task_data.tasks[message.sender.character] = message.content.tasks
-                table.insert(peer_list, message.sender.character)
-                table.sort(peer_list)
+                -- Only accept task data from collectors we started (prevents cross-group pollution)
+                local is_known_collector = false
+                for _, collector in pairs(known_collectors) do
+                    if collector:lower() == message.sender.character:lower() then
+                        is_known_collector = true
+                        break
+                    end
+                end
+                
+                if is_known_collector then
+                    task_data.tasks[message.sender.character] = message.content.tasks
+                    table.insert(peer_list, message.sender.character)
+                    table.sort(peer_list)
+                else
+                    -- Silently ignore data from unknown senders (other groups' collectors)
+                end
             end
             triggers.timestamp = mq.gettime()
             
@@ -587,8 +664,8 @@ local function display_failed_objectives_view()
                     )
                     
                     if matched_item then
-                        -- Success! Cache the result
-                        quest_db.store_objective(selected_objective, "", matched_item)
+                        -- Success! Cache the result with task_name set to indicate manual override
+                        quest_db.store_objective(selected_objective, "[MANUAL_OVERRIDE]", matched_item)
                         failed_objectives[selected_objective] = nil
                         update_failed_objectives_list()
                         failed_objective_search_input = ""
@@ -820,9 +897,10 @@ local function displayGUI()
                                         color_r, color_g, color_b = 1, 1, 0  -- Yellow for partial
                                     end
                                     
-                                    -- Draw indicator with position number
+                                    -- Draw indicator with short character name (3-4 chars)
+                                    local short_name = char_task.character:sub(1, 4)  -- First 4 characters
                                     local is_ml = char_task.character == my_name
-                                    draw_colored_indicator(color_r, color_g, color_b, tostring(char_task.position), is_ml)
+                                    draw_colored_indicator(color_r, color_g, color_b, short_name, is_ml)
                                     
                                     -- Tooltip on hover
                                     if ImGui.IsItemHovered() then
@@ -857,18 +935,18 @@ local function displayGUI()
                                     ImGui.TextColored(1, 1, 0, 1, "• " .. clean_objective .. " - " .. objective.status)
                                 end
                             
-                            -- Show who still needs this objective (position numbers) on same line but indented
+                            -- Show who still needs this objective (short names) on same line but indented
                             if #characters_with_task > 1 then
                                 local incomplete_positions = {}
                                 for _, char_task in ipairs(characters_with_task) do
                                     if i <= #char_task.task.objectives then
                                         local other_obj = char_task.task.objectives[i]
                                         if other_obj.status ~= "Done" then
-                                            local pos_display = tostring(char_task.position)
+                                            local short_name = char_task.character:sub(1, 4)  -- First 4 characters
                                             if char_task.character == my_name then
-                                                pos_display = pos_display .. "*"  -- Asterisk for ML
+                                                short_name = short_name .. "*"  -- Asterisk for ML
                                             end
-                                            table.insert(incomplete_positions, pos_display)
+                                            table.insert(incomplete_positions, short_name)
                                         end
                                     end
                                 end
@@ -1034,7 +1112,10 @@ local function refresh_character_after_loot(character_name, item_name)
     for _, task in ipairs(character_tasks) do
         if task.objectives then
             for _, objective in ipairs(task.objectives) do
-                if objective and objective.objective then
+                -- SKIP objectives that are marked "Done" - they're not active anymore
+                if objective and objective.status == "Done" then
+                    Write.Debug("[CHAR_REFRESH] Skipping completed objective: '%s'", objective.objective)
+                elseif objective and objective.objective then
                     local item_name_extracted = extract_quest_item_from_objective(objective.objective)
                     
                     if item_name_extracted then
@@ -1097,9 +1178,9 @@ local function refresh_character_after_loot(character_name, item_name)
                     else
                         Write.Debug("[CHAR_REFRESH] Could not extract item name from objective: '%s'", objective.objective)
                     end
-                end
-            end
-        end
+                end  -- Close if objective.status == "Done" or if objective and objective.objective
+            end  -- Close for _, objective in ipairs(task.objectives)
+        end  -- Close if task.objectives
     end
     
     -- Update the global quest data with only this character's items
@@ -1166,6 +1247,44 @@ local function manual_refresh_with_messages(show_messages)
     -- Force task update first to ensure fresh data
     update_tasks()
     
+    -- Build list of objectives that are currently NOT done (active)
+    -- We'll use this to clean up cache entries for completed objectives
+    local active_objectives = {}
+    if task_data.my_tasks and #task_data.my_tasks > 0 then
+        for _, task in ipairs(task_data.my_tasks) do
+            if task.objectives then
+                for _, obj in ipairs(task.objectives) do
+                    if obj and obj.objective and obj.status ~= "Done" then
+                        active_objectives[obj.objective] = true
+                    end
+                end
+            end
+        end
+    end
+    for _, char_tasks in pairs(task_data.tasks) do
+        if char_tasks then
+            for _, task in ipairs(char_tasks) do
+                if task.objectives then
+                    for _, obj in ipairs(task.objectives) do
+                        if obj and obj.objective and obj.status ~= "Done" then
+                            active_objectives[obj.objective] = true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Get all cached objectives and remove ones that are no longer active (quest stage complete)
+    local cached_objs = quest_db.get_all_cached_objectives()
+    for cached_obj_text, _ in pairs(cached_objs) do
+        if not active_objectives[cached_obj_text] then
+            -- This objective is no longer active - remove from cache so new ones are discovered
+            quest_db.delete_objective_cache_entry(cached_obj_text)
+            Write.Debug("MANUAL_REFRESH: Removed completed objective from cache: '%s'", cached_obj_text)
+        end
+    end
+    
     -- Debug logging only - remove spam from MQ2 character log
     Write.Debug("MANUAL_REFRESH: Starting manual refresh with %d characters", #peer_list)
     local task_count = 0
@@ -1192,9 +1311,13 @@ local function manual_refresh_with_messages(show_messages)
                     -- CRITICAL: Use objective.objective NOT objective.text! 
                     -- The get_tasks() function creates objective.objective field
                     -- UI code uses objective.objective, manual refresh MUST match
-                        if objective and objective.objective then
-                            -- Smart quest item extraction - extract proper item names and validate against database
-                            local item_name = extract_quest_item_from_objective(objective.objective)
+                    
+                    -- SKIP objectives that are marked "Done" - they're not active anymore
+                    if objective and objective.status == "Done" then
+                        Write.Debug("MANUAL_REFRESH: Skipping completed objective: '%s'", objective.objective)
+                    elseif objective and objective.objective then
+                        -- Smart quest item extraction - extract proper item names and validate against database
+                        local item_name = extract_quest_item_from_objective(objective.objective)
                             
                             if item_name then
                                 -- Validate against database using fuzzy matching
@@ -1259,7 +1382,7 @@ local function manual_refresh_with_messages(show_messages)
                         else
                             Write.Debug("MANUAL_REFRESH: No quest item found in objective")
                         end
-                    end  -- Close if objective and objective.objective (NOT objective.text!)
+                    end  -- Close if objective.status == "Done" or if objective and objective.objective
                 end  -- Close for _, objective in ipairs(task.objectives)
             end  -- Close if task.objectives
         end  -- Close for _, task in ipairs(tasks)  
@@ -1551,12 +1674,48 @@ end
 -- Argument processing (TaskHUD's exact pattern)
 local function check_args()
     if #args == 0 then
-        -- Master instance - ensure clean start by stopping any EXISTING instances on other characters only
-        mq.cmd(string.format('/echo %s \\aoStopping any existing instances on other characters...', taskheader))
-        mq.cmd('/dge /lua stop yalm2/yalm2_native_quest')  -- Use /dge to exclude THIS character
-        mq.delay(2000)  -- Give more time for cleanup
-        mq.cmd(string.format('/echo %s \\aoStarting collectors on other characters...', taskheader))
-        mq.cmd('/dge /lua run yalm2/yalm2_native_quest nohud')  -- Use /dge to exclude self
+        -- Master instance - start collectors on GROUP/RAID MEMBERS ONLY (not all DanNet peers)
+        -- This allows multiple independent groups to run simultaneously
+        mq.cmd(string.format('/echo %s \\aoStarting as master HUD for %s', taskheader, my_name))
+        
+        -- Get current group/raid to determine who to start collectors on
+        local raid_count = mq.TLO.Raid.Members() or 0
+        local group_count = mq.TLO.Group.Members() or 0
+        
+        if raid_count > 0 then
+            mq.cmd(string.format('/echo %s \\aoManaging raid with %d members', taskheader, raid_count))
+        elseif group_count > 0 then
+            mq.cmd(string.format('/echo %s \\aoManaging group with %d members', taskheader, group_count))
+        else
+            mq.cmd(string.format('/echo %s \\aoSolo mode', taskheader))
+        end
+        
+        -- Only start collectors on actual group/raid members (not all DanNet)
+        -- Loop through raid/group and start collectors
+        if raid_count > 0 then
+            for i = 1, raid_count do
+                local member = mq.TLO.Raid.Member(i)
+                if member and member.DisplayName() and member.DisplayName() ~= "" and member.DisplayName():lower() ~= my_name:lower() then
+                    local collector_name = member.DisplayName()
+                    table.insert(known_collectors, collector_name)
+                end
+            end
+            mq.cmd(string.format('/echo %s \\aoStarting collectors on %d raid members', taskheader, #known_collectors))
+            mq.cmd('/dgga /lua run yalm2/yalm2_native_quest nohud')
+            mq.delay(500)
+        elseif group_count > 0 then
+            for i = 1, group_count do
+                local member = mq.TLO.Group.Member(i)
+                if member and member.DisplayName() and member.DisplayName() ~= "" and member.DisplayName():lower() ~= my_name:lower() then
+                    local collector_name = member.DisplayName()
+                    table.insert(known_collectors, collector_name)
+                end
+            end
+            mq.cmd(string.format('/echo %s \\aoStarting collectors on %d group members', taskheader, #known_collectors))
+            mq.cmd('/dgge /lua run yalm2/yalm2_native_quest nohud')
+            mq.delay(500)
+        end
+        
         drawGUI = true
         triggers.do_refresh = true
     else
@@ -1565,7 +1724,6 @@ local function check_args()
                 drawGUI = false
             elseif arg == 'debug' then
                 debug_mode = true
-                mq.cmd('/dgga /lua run yalm2\\yalm2_native_quest nohud')
                 drawGUI = true
                 triggers.do_refresh = true
             end
@@ -1578,6 +1736,11 @@ local function init()
     create_events()
     if drawGUI then
         mq.imgui.init('displayGUI', displayGUI)
+        -- Master: Add master's own tasks to the displayed list so master appears in UI
+        task_data.my_tasks = get_tasks()
+        task_data.tasks[my_name] = task_data.my_tasks
+        table.insert(peer_list, my_name)
+        table.sort(peer_list)
     end
     mq.bind('/yalm2quest', cmd_yalm2quest)
     mq.cmd(string.format('/echo %s \\agstarting for %s. Use \\ar/yalm2quest help \\agfor commands.', taskheader, my_name))

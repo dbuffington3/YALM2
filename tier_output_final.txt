@@ -1,0 +1,5 @@
+Final tier map ready: 131 base entries
+Saved tier_map_final.json
+Added 0 more tier fields
+Unmapped: 41 sets
+File saved

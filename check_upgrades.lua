@@ -6,6 +6,7 @@
 
 local mq = require('mq')
 local inspect = require('yalm2.lib.inspect')
+local ImGui = require('ImGui')
 
 -- Import the database module and ensure it's initialized
 require('yalm2.lib.database')
@@ -18,6 +19,18 @@ if not db.database then
         error("Failed to open database. Ensure MQ2LinkDB.db is in <MQ2_ROOT>/resources/ directory")
     end
 end
+
+-- Global upgrade results storage for ImGui display
+local upgrade_results = {
+    upgrades = {},  -- Array of upgrade recommendations
+    character = nil,
+    level = nil,
+    class = nil,
+    scan_complete = false,
+    scan_start_time = 0
+}
+
+local show_upgrade_window = false
 
 -- ============================================================================
 -- Stat Weights by Class
@@ -489,7 +502,25 @@ end
 local function can_equip_item(item_id, character_level, character_class)
     --[[
     Check if character can equip item based on level and class requirements
-    Classes field is a bitmask where each bit represents a class (1-indexed)
+    Classes field is a bitmask where each bit (0-indexed) represents a class
+    
+    Class Bitmask Mapping (0-indexed bit positions):
+    Bit 0  = 2^0  = 1      = Warrior
+    Bit 1  = 2^1  = 2      = Cleric
+    Bit 2  = 2^2  = 4      = Paladin
+    Bit 3  = 2^3  = 8      = Ranger
+    Bit 4  = 2^4  = 16     = Shadowknight
+    Bit 5  = 2^5  = 32     = Druid
+    Bit 6  = 2^6  = 64     = Monk
+    Bit 7  = 2^7  = 128    = Bard
+    Bit 8  = 2^8  = 256    = Rogue
+    Bit 9  = 2^9  = 512    = Shaman
+    Bit 10 = 2^10 = 1024   = Necromancer
+    Bit 11 = 2^11 = 2048   = Wizard
+    Bit 12 = 2^12 = 4096   = Magician
+    Bit 13 = 2^13 = 8192   = Enchanter
+    Bit 14 = 2^14 = 16384  = Beastlord
+    Bit 15 = 2^15 = 32768  = Berserker
     ]]
     
     if not item_id or item_id == 0 then
@@ -512,39 +543,38 @@ local function can_equip_item(item_id, character_level, character_class)
     end
     
     -- Check class restriction (classes field is bitmask)
-    -- Classes.lua defines: WAR=1, CLR=2, PAL=3, RNG=4, SHD=5, DRU=6, MNK=7, BRD=8, ROG=9, SHM=10, NEC=11, WIZ=12, MAG=13, ENC=14, BST=15, BER=16
     -- If classes > 0, item is restricted to specific classes
     if item_data.classes and item_data.classes > 0 then
-        -- Map character class name to class index (1-based)
-        local class_map = {
-            ['Warrior'] = 1, ['WAR'] = 1,
-            ['Cleric'] = 2, ['CLR'] = 2,
-            ['Paladin'] = 3, ['PAL'] = 3,
-            ['Ranger'] = 4, ['RNG'] = 4,
-            ['Shadowknight'] = 5, ['Shadow Knight'] = 5, ['SHD'] = 5,  -- MQ2 API returns "Shadow Knight" with space
-            ['Druid'] = 6, ['DRU'] = 6,
-            ['Monk'] = 7, ['MNK'] = 7,
-            ['Bard'] = 8, ['BRD'] = 8,
-            ['Rogue'] = 9, ['ROG'] = 9,
-            ['Shaman'] = 10, ['SHM'] = 10,
-            ['Necromancer'] = 11, ['NEC'] = 11,
-            ['Wizard'] = 12, ['WIZ'] = 12,
-            ['Magician'] = 13, ['MAG'] = 13,
-            ['Enchanter'] = 14, ['ENC'] = 14,
-            ['Beastlord'] = 15, ['BST'] = 15,
-            ['Berserker'] = 16, ['BER'] = 16,
+        -- Map character class name to bit position (0-indexed)
+        local class_bit_positions = {
+            ['Warrior'] = 0,
+            ['Cleric'] = 1,
+            ['Paladin'] = 2,
+            ['Ranger'] = 3,
+            ['Shadowknight'] = 4,
+            ['Shadow Knight'] = 4,  -- MQ2 API returns "Shadow Knight" with space
+            ['Druid'] = 5,
+            ['Monk'] = 6,
+            ['Bard'] = 7,
+            ['Rogue'] = 8,
+            ['Shaman'] = 9,
+            ['Necromancer'] = 10,
+            ['Wizard'] = 11,
+            ['Magician'] = 12,
+            ['Enchanter'] = 13,
+            ['Beastlord'] = 14,
+            ['Berserker'] = 15,
         }
         
-        local class_index = class_map[character_class]
-        if not class_index then
+        local class_bit = class_bit_positions[character_class]
+        if not class_bit then
             -- Unknown class, be conservative and reject
             return false
         end
         
         -- Check if this class's bit is set in the classes bitmask
-        -- Bit N is set if (classes & (2^(N-1))) > 0
-        local class_bit = bit.lshift(1, class_index - 1)
-        if bit.band(item_data.classes, class_bit) == 0 then
+        local can_equip = bit.band(item_data.classes, bit.lshift(1, class_bit))
+        if can_equip == 0 then
             -- This class is NOT in the bitmask, so they can't use it
             return false
         end
@@ -696,7 +726,7 @@ local function get_equipped_items()
         if ok_item and item then
             local ok_id, item_id = pcall(function() return item.ID() end)
             if not ok_id or not item_id or item_id == 0 then
-                break  -- Empty slot
+                goto next_equipped_slot  -- Empty slot, continue to next
             end
             
             local ok_name, item_name = pcall(function() return item.Name() end)
@@ -709,6 +739,8 @@ local function get_equipped_items()
                 })
             end
         end
+        
+        ::next_equipped_slot::
     end
     
     return items
@@ -825,6 +857,120 @@ local function format_stat_change(field, delta)
 end
 
 -- ============================================================================
+-- Upgrade Tracking Functions
+-- ============================================================================
+
+local function get_slots_from_mask(slots_mask)
+    --[[
+    Convert a slots bitmask to an array of slot numbers that support this item
+    ]]
+    if not slots_mask or slots_mask == 0 then return {} end
+    
+    local slot_array = {}
+    for slot_num = 0, 22 do
+        if bit.band(slots_mask, bit.lshift(1, slot_num)) > 0 then
+            table.insert(slot_array, slot_num)
+        end
+    end
+    return slot_array
+end
+
+local function check_item_against_all_slots(inv_item, equip_slot, equipped_stats, inv_stats, weights, char_class, char_level, equippable_items)
+    --[[
+    For inventory items that can fit multiple slots (rings, earrings, wrists),
+    check against ALL equipped items in those slots and return the best match
+    with the most benefit.
+    
+    Returns: { slot_num, best_upgrade, best_score_delta } or nil if no upgrade found
+    ]]
+    
+    local inv_slots = get_slots_from_mask(inv_stats.slots or 0)
+    
+    -- Only apply multi-slot logic for items that can go in 2+ slots
+    if #inv_slots <= 1 then
+        return nil  -- Single-slot item, use normal logic
+    end
+    
+    local best_overall_slot = nil
+    local best_overall_upgrade = nil
+    local best_overall_score_delta = 0
+    
+    -- Check inventory item against each possible slot it can fit in
+    for _, potential_slot in ipairs(inv_slots) do
+        -- Skip if this is the slot we're already processing
+        if potential_slot == equip_slot then
+            goto next_potential_slot
+        end
+        
+        -- Find the equipped item in this potential slot
+        local equipped_in_slot = nil
+        for _, equipped_item in ipairs(get_equipped_items()) do
+            if equipped_item.slot == potential_slot then
+                equipped_in_slot = equipped_item
+                break
+            end
+        end
+        
+        if not equipped_in_slot then
+            goto next_potential_slot
+        end
+        
+        local equipped_in_slot_stats = get_item_stats(equipped_in_slot.item_id)
+        if not equipped_in_slot_stats then
+            goto next_potential_slot
+        end
+        
+        -- Check if items are comparable
+        if not are_items_comparable(equipped_in_slot_stats, inv_stats) then
+            goto next_potential_slot
+        end
+        
+        -- Calculate score improvement for this specific slot
+        local equipped_score_for_slot = calculate_stat_score(equipped_in_slot_stats, weights, potential_slot, char_class)
+        local inv_score_for_slot = calculate_stat_score(inv_stats, weights, potential_slot, char_class)
+        local score_delta_for_slot = inv_score_for_slot - equipped_score_for_slot
+        
+        -- Apply same penalties as normal logic
+        local ac_delta = (inv_stats.ac or 0) - (equipped_in_slot_stats.ac or 0)
+        if ac_delta < -10 then
+            score_delta_for_slot = score_delta_for_slot - (math.abs(ac_delta) * 2)
+        end
+        
+        -- Compare effects
+        local effect_comparison = compare_effects(equipped_in_slot_stats.spell_effect, inv_stats.spell_effect)
+        if effect_comparison == 1 then
+            score_delta_for_slot = score_delta_for_slot + 10
+        elseif effect_comparison == -1 then
+            score_delta_for_slot = score_delta_for_slot - 5
+        end
+        
+        -- Keep track of best improvement across all applicable slots
+        if score_delta_for_slot > best_overall_score_delta then
+            best_overall_score_delta = score_delta_for_slot
+            best_overall_slot = potential_slot
+            best_overall_upgrade = {
+                item_id = inv_item.item_id,
+                item_name = inv_item.item_name,
+                stats = inv_stats,
+                score_delta = score_delta_for_slot,
+                effect_comparison = effect_comparison,
+                currently_equipped_slot = potential_slot,
+                currently_equipped_item = equipped_in_slot.item_name,
+                currently_equipped_stats = equipped_in_slot_stats,
+            }
+        end
+        
+        ::next_potential_slot::
+    end
+    
+    if best_overall_upgrade and best_overall_score_delta > 0 then
+        return best_overall_upgrade
+    end
+    
+    return nil
+end
+
+-- ============================================================================
 -- Main Logic
 -- ============================================================================
 
@@ -924,37 +1070,52 @@ local function check_upgrades()
                     goto next_inventory_item
                 end
                 
-                -- For primary/secondary weapon slots (13/14), apply class-aware shield filtering
-                -- Shields (itemtype=8) should not replace weapons, with exceptions based on class
+                -- For primary/secondary weapon slots (13/14), apply strict weapon-only validation
                 -- Weapon slots: 13=MainHand, 14=OffHand
+                -- Valid weapon itemtypes: 1-5 are weapons (2H Slash, 1H Pierce, 1H Blunt, 2H Blunt, Ranged)
+                -- itemtype 0 also appears to be valid weapons (like the Sword of Frozen Wind)
+                -- itemtype 8 is shields (with class-specific rules)
                 if (equipped_slot_num == 13 or equipped_slot_num == 14) then
-                    local equipped_is_weapon = equipped_stats.itemtype and equipped_stats.itemtype >= 1 and equipped_stats.itemtype <= 5
-                    local inv_is_shield = inv_stats.itemtype == 8
+                    -- Determine what we're working with
+                    local equipped_is_weapon = (equipped_stats.itemtype == 0) or 
+                                              (equipped_stats.itemtype and equipped_stats.itemtype >= 1 and equipped_stats.itemtype <= 5)
                     local equipped_is_shield = equipped_stats.itemtype == 8
-                    local inv_is_weapon = inv_stats.itemtype and inv_stats.itemtype >= 1 and inv_stats.itemtype <= 5
                     
-                    -- MAINHAND (slot 13): Never allow shields
-                    -- Shields in mainhand are always a bad idea for all classes
+                    local inv_is_weapon = (inv_stats.itemtype == 0) or 
+                                         (inv_stats.itemtype and inv_stats.itemtype >= 1 and inv_stats.itemtype <= 5)
+                    local inv_is_shield = inv_stats.itemtype == 8
+                    
+                    -- MAINHAND (slot 13): Never allow shields - weapons only
                     if equipped_slot_num == 13 then
-                        if equipped_is_weapon and inv_is_shield then
-                            goto next_inventory_item  -- Weapon -> Shield in mainhand is always bad
+                        -- Shields are NEVER allowed in mainhand
+                        if inv_is_shield then
+                            goto next_inventory_item
                         end
-                        if equipped_is_shield and inv_is_weapon then
-                            goto next_inventory_item  -- Shield -> Weapon comparison in mainhand (weapon is better)
+                        -- If equipped was a weapon, only allow weapon replacements
+                        if equipped_is_weapon and not inv_is_weapon then
+                            goto next_inventory_item
+                        end
+                        -- If equipped was a shield, only allow shield replacements
+                        if equipped_is_shield and not inv_is_shield then
+                            goto next_inventory_item
                         end
                     end
                     
                     -- OFFHAND (slot 14): Class-aware shield filtering
-                    -- Tank and caster classes can use shields, but melee DPS should not
+                    -- Shields are only allowed for tank and caster classes
                     if equipped_slot_num == 14 then
+                        -- If inventory item is a shield, check class permission
                         if inv_is_shield and not can_equip_shield_in_offhand(char_class) then
-                            -- This is a shield being recommended to a melee DPS class in offhand
+                            -- This is a shield being recommended to a dual-wield or melee DPS class
                             goto next_inventory_item
                         end
                         
-                        -- Also prevent melee DPS from losing weapon for shield in offhand
-                        if equipped_is_weapon and inv_is_shield and not can_equip_shield_in_offhand(char_class) then
-                            goto next_inventory_item
+                        -- If equipped is a weapon, only allow weapon replacements (not shields)
+                        if equipped_is_weapon and inv_is_shield then
+                            -- Trying to replace a weapon with a shield - not allowed unless class permits shields
+                            if not can_equip_shield_in_offhand(char_class) then
+                                goto next_inventory_item
+                            end
                         end
                     end
                 end
@@ -1015,7 +1176,9 @@ local function check_upgrades()
                         item_name = inv_item.item_name,
                         stats = inv_stats,
                         score_delta = score_delta,
-                        effect_comparison = effect_comparison
+                        effect_comparison = effect_comparison,
+                        slot_index = inv_item.slot_index,
+                        container_slot = inv_item.container_slot
                     }
                 end
                 
@@ -1024,23 +1187,42 @@ local function check_upgrades()
         end
         
         -- Debug: Show what items were compared for this slot
-        -- if #compared_ids > 0 then
-        --     local id_list = table.concat(compared_ids, ', ')
-        --     mq.cmdf('/echo   Compared IDs: %s', id_list)
-        -- else
-        --     mq.cmdf('/echo   No items to compare (no matching slot types)')
-        -- end
+        if #compared_ids > 0 then
+            local id_list = table.concat(compared_ids, ', ')
+            mq.cmdf('/echo   Compared IDs: %s', id_list)
+        else
+            mq.cmdf('/echo   No items to compare (no matching slot types)')
+        end
         
         -- Report best upgrade if found
         if best_upgrade and best_score_delta > 0 then
             upgrade_count = upgrade_count + 1
+            
+            -- Store upgrade in results table
+            table.insert(upgrade_results.upgrades, {
+                slot_num = equipped_slot_num,
+                slot_name = slot_display_name,
+                current_item = equipped_name,
+                current_stats = equipped_stats,
+                upgrade_item = best_upgrade.item_name,
+                upgrade_stats = best_upgrade.stats,
+                score_delta = best_score_delta,
+                stat_deltas = get_stat_delta(equipped_stats, best_upgrade.stats, weights),
+                effect_comparison = best_upgrade.effect_comparison,
+                current_effect = equipped_stats.spell_effect or 'None',
+                upgrade_effect = best_upgrade.stats.spell_effect or 'None',
+                -- Location info for pickup button
+                upgrade_slot_index = best_upgrade.slot_index,
+                upgrade_container_slot = best_upgrade.container_slot,
+            })
+            
+            -- Also still print to log for immediate feedback
             mq.cmdf('/echo \ag✓ %s:\ax', slot_display_name)
             mq.cmdf('/echo   Current: %s', equipped_name)
             mq.cmdf('/echo   \agUpgrade:\ax %s', best_upgrade.item_name)
             
             -- Show stat deltas
-            local deltas = get_stat_delta(equipped_stats, best_upgrade.stats, weights)
-            for field, delta in pairs(deltas) do
+            for field, delta in pairs(upgrade_results.upgrades[#upgrade_results.upgrades].stat_deltas) do
                 mq.cmdf('/echo     %s', format_stat_change(field, delta))
             end
             
@@ -1064,17 +1246,299 @@ local function check_upgrades()
         ::next_equipped::
     end
     
+    -- Deduplicate upgrades: If the same item is recommended for multiple slots, keep only the best one
+    local item_recommendations = {}  -- Track best recommendation per item
+    local final_upgrades = {}
+    
+    for _, upgrade in ipairs(upgrade_results.upgrades) do
+        local item_key = upgrade.upgrade_item:lower()
+        
+        if not item_recommendations[item_key] then
+            -- First time seeing this item, record it
+            item_recommendations[item_key] = upgrade
+            table.insert(final_upgrades, upgrade)
+        else
+            -- Already recommended this item - keep the one with better score improvement
+            local existing = item_recommendations[item_key]
+            if upgrade.score_delta > existing.score_delta then
+                -- This recommendation is better, replace the old one
+                -- Find and remove the old one from final_upgrades
+                for idx, final_upgrade in ipairs(final_upgrades) do
+                    if final_upgrade.upgrade_item:lower() == item_key then
+                        table.remove(final_upgrades, idx)
+                        break
+                    end
+                end
+                item_recommendations[item_key] = upgrade
+                table.insert(final_upgrades, upgrade)
+            end
+            -- Otherwise keep the existing one (higher score_delta)
+        end
+    end
+    
+    -- Replace upgrades list with deduplicated version
+    upgrade_results.upgrades = final_upgrades
+    
+    -- Update results structure
+    upgrade_results.character = char_name
+    upgrade_results.level = char_level
+    upgrade_results.class = char_class
+    upgrade_results.scan_complete = true
+    
     -- Summary
     mq.cmdf('/echo \ao=================================================\ax')
-    if upgrade_count > 0 then
-        mq.cmdf('/echo \ag✓ Found %d upgrade(s)\ax', upgrade_count)
+    if #final_upgrades > 0 then
+        mq.cmdf('/echo \ag✓ Found %d upgrade(s)\ax', #final_upgrades)
+        mq.cmdf('/echo \ayOpening upgrade window...\ax')
+        show_upgrade_window = true
     else
         mq.cmdf('/echo \ayNo clear upgrades found\ax')
     end
 end
 
 -- ============================================================================
+-- Item Pickup Helper
+-- ============================================================================
+
+local function pickup_item_by_slot(slot_index, container_slot, item_name)
+    --[[
+    Pick up an item using its known slot location
+    slot_index: The equipment/inventory slot
+    container_slot: If item is in a container, this is the sub-slot (nil if direct item)
+    item_name: Item name for logging purposes
+    ]]
+    if not slot_index then
+        mq.cmdf('/echo [PICKUP] No location info available for %s', item_name or 'item')
+        return false
+    end
+    
+    if container_slot then
+        -- Item is inside a container (bag)
+        mq.cmdf("/shift /itemnotify in pack%d %d leftmouseup", slot_index - 22, container_slot)
+        mq.cmdf('/echo [PICKUP] SUCCESS: Picked up %s from pack slot %d item %d', item_name, slot_index - 22, container_slot)
+    else
+        -- Item is directly in equipment/inventory slot
+        mq.cmdf("/itemnotify %d leftmouseup", slot_index)
+        mq.cmdf('/echo [PICKUP] SUCCESS: Picked up %s from slot %d', item_name, slot_index)
+    end
+    
+    return true
+end
+
+-- ============================================================================
+-- ImGui Display Function
+-- ============================================================================
+
+local function display_upgrades_window()
+    --[[
+    Display upgrade recommendations in an ImGui window
+    ]]
+    if not show_upgrade_window then return end
+    
+    -- Validate upgrade_results before rendering
+    if not upgrade_results or not upgrade_results.upgrades then
+        show_upgrade_window = false
+        return
+    end
+    
+    ImGui.SetNextWindowSize(900, 650)
+    local ok, open = pcall(function() return ImGui.Begin("Equipment Upgrades##CheckUpgrades", true) end)
+    
+    if not ok then
+        mq.cmdf('/echo \arERROR: ImGui.Begin failed\ax')
+        show_upgrade_window = false
+        return
+    end
+    
+    if not open then
+        show_upgrade_window = false
+        pcall(function() ImGui.End() end)
+        return
+    end
+    
+    -- Header with character info
+    ImGui.TextColored(0.2, 0.8, 1.0, 1.0, string.format("%s Lvl %d %s | Found %d upgrade(s)", 
+        upgrade_results.character or "Unknown",
+        upgrade_results.level or 0,
+        upgrade_results.class or "Unknown",
+        #upgrade_results.upgrades))
+    ImGui.Separator()
+    
+    -- Upgrade count and instructions
+    if #upgrade_results.upgrades > 0 then
+        ImGui.TextColored(0.7, 0.7, 0.7, 1.0, "Green = improvement, Red = regression")
+        
+        -- Display upgrades in a scrollable region
+        ImGui.BeginChild("##UpgradesScroll", 0, -40)
+            
+            for upgrade_idx, upgrade in ipairs(upgrade_results.upgrades) do
+                ImGui.PushID(upgrade_idx)
+                
+                -- Slot and item info
+                ImGui.TextColored(1.0, 0.84, 0.0, 1.0, upgrade.slot_name)
+                ImGui.SameLine(150)
+                ImGui.TextColored(0.8, 0.8, 0.8, 1.0, upgrade.current_item)
+                ImGui.SameLine()
+                ImGui.Text(" -> ")
+                ImGui.SameLine()
+                ImGui.TextColored(0.2, 1.0, 0.2, 1.0, upgrade.upgrade_item)
+                ImGui.SameLine()
+                
+                if ImGui.SmallButton(string.format("Pick Up##%d", upgrade_idx)) then
+                    pickup_item_by_slot(upgrade.upgrade_slot_index, upgrade.upgrade_container_slot, upgrade.upgrade_item)
+                end
+                
+                -- Organize stats into 3 columns matching the stats UI layout
+                local col1_stats = {}      -- Base stats in specific order
+                local col2_stats = {}      -- Character Stats (STR, STA, INT, WIS, AGI, DEX, CHA)
+                local col3_stats = {}      -- Resists, Spells, and other effects
+                
+                local col2_fields = {str=true, sta=true, int=true, wis=true, agi=true, dex=true, cha=true}
+                local col3_fields = {magic_resist=true, fire_resist=true, cold_resist=true, disease_resist=true, poison_resist=true, corruption=true}
+                
+                -- Collect all stats
+                local all_stats = {}
+                for field, delta in pairs(upgrade.stat_deltas) do
+                    local stat_text = format_stat_change(field, delta)
+                    table.insert(all_stats, {field = field, delta = delta, text = stat_text})
+                end
+                
+                -- Define column 1 order
+                local col1_order = {ac=1, hp=2, mana=3, endurance=4, attack=5, mana_regen=6}
+                local col1_used = {}
+                
+                -- Build column 1 in specified order
+                for _, stat in ipairs(all_stats) do
+                    if col1_order[stat.field] then
+                        table.insert(col1_stats, {order = col1_order[stat.field], stat = stat})
+                        col1_used[stat.field] = true
+                    end
+                end
+                
+                -- Sort column 1 by specified order
+                table.sort(col1_stats, function(a, b) return a.order < b.order end)
+                
+                -- Extract just the stats after sorting
+                local col1_sorted = {}
+                for _, entry in ipairs(col1_stats) do
+                    table.insert(col1_sorted, entry.stat)
+                end
+                col1_stats = col1_sorted
+                
+                -- Add any remaining col1 fields that weren't in the ordered list
+                for _, stat in ipairs(all_stats) do
+                    if (stat.field == "hp_regen" or stat.field == "endurance_regen" or stat.field == "haste" or stat.field == "velocity") 
+                       and not col1_used[stat.field] then
+                        table.insert(col1_stats, stat)
+                    end
+                end
+                
+                -- Categorize remaining stats into columns 2 and 3
+                for _, stat in ipairs(all_stats) do
+                    if not col1_used[stat.field] and 
+                       stat.field ~= "hp_regen" and stat.field ~= "endurance_regen" and 
+                       stat.field ~= "haste" and stat.field ~= "velocity" then
+                        if col2_fields[stat.field] then
+                            table.insert(col2_stats, stat)
+                        else
+                            table.insert(col3_stats, stat)
+                        end
+                    end
+                end
+                
+                -- Sort columns 2 and 3
+                table.sort(col2_stats, function(a, b) return a.field < b.field end)
+                table.sort(col3_stats, function(a, b) return a.field < b.field end)
+                
+                -- Helper function to display a stat
+                local function display_stat(stat)
+                    if stat then
+                        if stat.delta > 0 then
+                            ImGui.TextColored(0.2, 1.0, 0.2, 1.0, stat.text)
+                        elseif stat.delta < 0 then
+                            ImGui.TextColored(1.0, 0.2, 0.2, 1.0, stat.text)
+                        else
+                            ImGui.Text(stat.text)
+                        end
+                    else
+                        ImGui.Text("")
+                    end
+                end
+                
+                -- Display 3 columns side by side
+                ImGui.Indent()
+                local max_rows = math.max(#col1_stats, #col2_stats, #col3_stats)
+                for row = 1, max_rows do
+                    -- Column 1
+                    display_stat(col1_stats[row])
+                    ImGui.SameLine(200)
+                    
+                    -- Column 2
+                    display_stat(col2_stats[row])
+                    ImGui.SameLine(400)
+                    
+                    -- Column 3
+                    display_stat(col3_stats[row])
+                end
+                ImGui.Unindent()
+                
+                -- Effect change if applicable
+                if upgrade.effect_comparison ~= 0 then
+                    if upgrade.effect_comparison == 1 then
+                        ImGui.TextColored(0.2, 1.0, 0.2, 1.0, 
+                            string.format("Effect: %s to %s", upgrade.current_effect, upgrade.upgrade_effect))
+                    else
+                        ImGui.TextColored(1.0, 0.5, 0.0, 1.0, 
+                            string.format("Effect: %s to %s", upgrade.current_effect, upgrade.upgrade_effect))
+                    end
+                end
+                
+                -- Score improvement
+                ImGui.TextColored(0.2, 1.0, 0.2, 1.0, string.format("Score +%.1f", upgrade.score_delta))
+                ImGui.Spacing()
+                
+                ImGui.PopID()
+            end
+            
+        ImGui.EndChild()
+    else
+        ImGui.TextColored(1.0, 1.0, 0.0, 1.0, "No upgrades found")
+    end
+    
+    ImGui.Separator()
+    if ImGui.Button("Close Window", 100, 0) then
+        show_upgrade_window = false
+    end
+    
+    ImGui.End()
+end-- ============================================================================
 -- Main Execution
 -- ============================================================================
 
+-- Run the upgrade check
 check_upgrades()
+
+-- Set up ImGui for persistent window display
+if upgrade_results.scan_complete and #upgrade_results.upgrades > 0 then
+    -- Safely initialize ImGui with error handling
+    local imgui_success = pcall(function()
+        mq.imgui.init('displayUpgradesWindow', display_upgrades_window)
+    end)
+    
+    if not imgui_success then
+        mq.cmdf('/echo \arERROR: Failed to initialize upgrade window\ax')
+        mq.delay(3000)
+    else
+        -- Keep the script running to display the window
+        while show_upgrade_window do
+            mq.doevents()
+            mq.delay(100)
+        end
+    end
+else
+    -- No upgrades found or scan failed, exit immediately
+    if upgrade_results.scan_complete then
+        mq.delay(2000)  -- Brief pause to see "no upgrades" message
+    end
+end
+

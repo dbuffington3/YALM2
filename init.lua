@@ -45,6 +45,14 @@ local function print_help()
 	Write.Help("\t  \ay/yalm2 simulate <item_name>\ax -- Simulate looting an item by name")
 	Write.Help("\t  \ay/yalm2 simulate id <item_id>\ax -- Simulate looting an item by ID")
 	Write.Help("\t  \ay/yalm2 simulate quest <item_name>\ax -- Simulate quest item")
+	Write.Help("\t  \ay/yalm2 cccu\ax -- Cross-Character Upgrade Checker")
+	Write.Help("\t  \ay/yalm2 cu\ax -- Equipment Upgrade Checker (current character)")
+	Write.Help("\t  \ay/yalm2 singleitem\ax -- Toggle collecting one of each low-value tradeskill item")
+	Write.Help("\t  \ay/yalm2 farming on|off\ax -- Toggle farming mode (prioritizes stackable valuables)")
+	Write.Help("\t  \ay/yalm2 mintier [tier]\ax -- Set minimum armor tier (ignores lower tiers, per-character)")
+	Write.Help("\t  \ay/yalm2 tier\ax -- Display armor tier progression list")
+	Write.Help("\t  \ay/yalm2 cleanup\ax -- Scan inventory for NO DROP items to destroy (dry run)")
+	Write.Help("\t  \ay/yalm2 cleanup destroy\ax -- Actually destroy NO DROP items that shouldn't be kept")
 
 	configuration.print_type_help(global_settings, configuration.types.command.settings_key)
 end
@@ -105,6 +113,214 @@ local function cmd_handler(...)
 			local item_name = table.concat(args, " ", 2)
 			simulator.simulate_loot(item_name, false, false)
 		end
+	elseif command == "cccu" then
+		-- Cross-Character Upgrade Checker
+		Write.Info("Running cross-character upgrade checker...")
+		mq.cmd("/lua run yalm2/check_cross_character_upgrades")
+	elseif command == "cu" then
+		-- Equipment Upgrade Checker (current character)
+		Write.Info("Running equipment upgrade checker...")
+		mq.cmd("/dgga /lua run yalm2/check_upgrades")
+	elseif command == "cleanup" then
+		-- Inventory cleanup command
+		local cleanup = require("yalm2.lib.inventory_cleanup")
+		
+		local dry_run = true
+		if args[2] == "destroy" then
+			dry_run = false
+		end
+		
+		Write.Info("=== Inventory Cleanup for %s ===", mq.TLO.Me.DisplayName())
+		if dry_run then
+			Write.Info("Running in \ayDRY RUN\ax mode - no items will be destroyed")
+			Write.Info("Use \ay/yalm2 cleanup destroy\ax to actually destroy items")
+		else
+			Write.Warn("Running in \arDESTROY\ax mode - items will be PERMANENTLY destroyed!")
+		end
+		Write.Info("")
+		
+		local items_to_destroy = cleanup.scan_inventory(char_settings, global_settings, dry_run)
+		
+		if #items_to_destroy == 0 then
+			Write.Info("No NO DROP items found that should be destroyed")
+		else
+			Write.Info("Found \ar%d\ax NO DROP items that should be destroyed:", #items_to_destroy)
+			Write.Info("")
+			
+			for _, entry in ipairs(items_to_destroy) do
+				Write.Info("  \ar[X]\ax %s [%s]", entry.name, entry.slot)
+				Write.Info("      Reason: %s", entry.reason)
+			end
+			
+			Write.Info("")
+			
+			if dry_run then
+				Write.Info("To destroy these items, run: \ay/yalm2 cleanup destroy\ax")
+			else
+				Write.Warn("Destroying %d items...", #items_to_destroy)
+				local destroyed_count = cleanup.destroy_items(items_to_destroy)
+				Write.Info("Destroyed \ar%d\ax items", destroyed_count)
+			end
+		end
+	elseif command == "singleitem" then
+		-- Toggle collect_one_tradeskill_sample setting (per-character)
+		local loot_settings = char_settings.loot
+		if not loot_settings then
+			char_settings.loot = {}
+			loot_settings = char_settings.loot
+		end
+		if not loot_settings.settings then
+			loot_settings.settings = {}
+		end
+		
+		-- Toggle the setting
+		local current_value = loot_settings.settings.collect_one_tradeskill_sample or false
+		loot_settings.settings.collect_one_tradeskill_sample = not current_value
+		
+		-- Save the settings
+		settings.save_char_settings(settings.get_char_settings_filename(), char_settings)
+		
+		-- Display status
+		if loot_settings.settings.collect_one_tradeskill_sample then
+			Write.Info("Single-item collection \agENABLED\ax for %s - will collect one of each low-value tradeskill item", mq.TLO.Me.DisplayName())
+		else
+			Write.Info("Single-item collection \arDISABLED\ax for %s - will leave low-value tradeskill items on corpse", mq.TLO.Me.DisplayName())
+		end
+	elseif command == "farming" then
+		-- Toggle farming mode (per-character) - forces "Ignore" for unmatched items to prioritize stackables/valuables
+		local mode_arg = args[2]
+		
+		local loot_settings = char_settings.loot
+		if not loot_settings then
+			char_settings.loot = {}
+			loot_settings = char_settings.loot
+		end
+		if not loot_settings.settings then
+			loot_settings.settings = {}
+		end
+		
+		if not mode_arg or (mode_arg ~= "on" and mode_arg ~= "off") then
+			-- Display current status
+			local farming_mode = loot_settings.settings.farming_mode or false
+			if farming_mode then
+				Write.Info("Farming mode is \agENABLED\ax for %s - looting only stackable valuables and explicit items", mq.TLO.Me.DisplayName())
+			else
+				Write.Info("Farming mode is \arDISABLED\ax for %s - normal looting behavior", mq.TLO.Me.DisplayName())
+			end
+			Write.Info("Usage: /yalm2 farming on|off")
+			return
+		end
+		
+		-- Set farming mode
+		loot_settings.settings.farming_mode = (mode_arg == "on")
+		
+		-- Save the settings
+		settings.save_char_settings(settings.get_char_settings_filename(), char_settings)
+		
+		-- Display status
+		if loot_settings.settings.farming_mode then
+			Write.Info("Farming mode \agENABLED\ax for %s", mq.TLO.Me.DisplayName())
+			Write.Info("  Will loot: Stackable valuables (10pp+), high favor items (1000+), tradeskills, quest needs, explicit items")
+			Write.Info("  Will ignore: Non-stackable trash items without explicit preferences")
+		else
+			Write.Info("Farming mode \arDISABLED\ax for %s - normal looting behavior resumed", mq.TLO.Me.DisplayName())
+		end
+	elseif command == "mintier" then
+		-- Set minimum armor tier (per-character) - ignores armor below this tier
+		local tier_value = tonumber(args[2])
+		
+		local loot_settings = char_settings.loot
+		if not loot_settings then
+			char_settings.loot = {}
+			loot_settings = char_settings.loot
+		end
+		if not loot_settings.settings then
+			loot_settings.settings = {}
+		end
+		
+		if not tier_value then
+			-- Display current setting
+			local current_tier = loot_settings.settings.min_armor_tier or 0
+			if current_tier > 0 then
+				Write.Info("Minimum armor tier for %s: \ag%d\ax (ignoring tiers 1-%d)", mq.TLO.Me.DisplayName(), current_tier, current_tier - 1)
+			else
+				Write.Info("Minimum armor tier for %s: \ayNOT SET\ax (accepting all tiers)", mq.TLO.Me.DisplayName())
+			end
+			Write.Info("Usage: /yalm2 mintier <tier_number>  (or 0 to disable)")
+			Write.Info("Example: /yalm2 mintier 5  (ignores Crude/Rough/Simple/Flawed Defiant, keeps Elaborate+ Defiant)")
+			Write.Info("")
+			Write.Info("Common Defiant tiers: 1=Crude, 2=Rough, 3=Simple, 4=Flawed, 5=Elaborate, 6=Intricate, 7=Ornate, 8=Elegant")
+			Write.Info("Progression tiers: 10-13=HoT, 14-17=VoA, 18-21=Fear+")
+			return
+		end
+		
+		-- Validate tier
+		if tier_value < 0 or tier_value > 25 then
+			Write.Error("Invalid tier value: %d (must be 0-25)", tier_value)
+			return
+		end
+		
+		-- Set the tier
+		loot_settings.settings.min_armor_tier = tier_value > 0 and tier_value or nil
+		
+		-- Save the settings
+		settings.save_char_settings(settings.get_char_settings_filename(), char_settings)
+		
+		-- Display status
+		if tier_value > 0 then
+			Write.Info("Minimum armor tier set to \ag%d\ax for %s - will ignore armor tiers 1-%d", tier_value, mq.TLO.Me.DisplayName(), tier_value - 1)
+			if tier_value <= 8 then
+				local defiant_tiers = {"Crude", "Rough", "Simple", "Flawed", "Elaborate", "Intricate", "Ornate", "Elegant"}
+				local ignored = {}
+				local kept = {}
+				for i = 1, 8 do
+					if i < tier_value then
+						table.insert(ignored, defiant_tiers[i])
+					else
+						table.insert(kept, defiant_tiers[i])
+					end
+				end
+				if #ignored > 0 then
+					Write.Info("  Defiant armor ignored: \ar%s\ax", table.concat(ignored, ", "))
+				end
+				if #kept > 0 then
+					Write.Info("  Defiant armor kept: \ag%s\ax", table.concat(kept, ", "))
+				end
+			end
+		else
+			Write.Info("Minimum armor tier \ayDISABLED\ax for %s - will accept all armor tiers", mq.TLO.Me.DisplayName())
+		end
+	elseif command == "tier" then
+		-- Display armor tier list
+		Write.Info("\at[\ax\ayArmor Tier Progression\ax\at]\ax")
+		Write.Info("")
+		
+		-- Load armor_sets module to get ARMOR_PROGRESSION
+		local armor_module = require("yalm2.config.armor_sets")
+		local ARMOR_PROGRESSION = armor_module.ARMOR_PROGRESSION
+		
+		-- Build inverted table: tier -> {set_names}
+		local tier_to_sets = {}
+		for set_name, data in pairs(ARMOR_PROGRESSION) do
+			local tier = data.tier
+			if not tier_to_sets[tier] then
+				tier_to_sets[tier] = {}
+			end
+			table.insert(tier_to_sets[tier], set_name)
+		end
+		
+		-- Display tiers in order
+		for tier = 1, 25 do
+			if tier_to_sets[tier] then
+				-- Sort set names alphabetically for consistent display
+				table.sort(tier_to_sets[tier])
+				local sets_str = table.concat(tier_to_sets[tier], ", ")
+				Write.Info("Tier \ay%2d\ax: %s", tier, sets_str)
+			end
+		end
+		
+		Write.Info("")
+		Write.Info("Use \ay/yalm2 mintier <tier>\ax to set minimum armor tier for this character")
 	elseif loot_command and loot_command.loaded then
 		if not state.command_running then
 			state.command_running = command
@@ -159,6 +375,10 @@ local function initialize()
 
 	Write.loglevel = global_settings.settings.log_level
 	
+	-- Display registered commands at startup
+	Write.Info("Registered /yalm2 cu - Equipment Upgrade Checker")
+	Write.Info("Registered /yalm2 cccu - Cross-Character Upgrade Checker")
+	
 	-- Initialize quest interface with native quest system and database
 	quest_interface.initialize(global_settings, native_tasks, YALM2_Database)
 	
@@ -195,8 +415,8 @@ local function main()
 				last_loader_check = current_time
 			end
 
-			looting.handle_master_looting(global_settings)
-			looting.handle_solo_looting(global_settings)
+			looting.handle_master_looting(global_settings, char_settings)
+			looting.handle_solo_looting(global_settings, char_settings)
 			looting.handle_personal_loot()
 			
 			-- Process native quest system background tasks

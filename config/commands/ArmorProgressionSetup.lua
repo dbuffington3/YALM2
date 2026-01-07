@@ -1,4 +1,29 @@
--- Armor Progression Setup Command Handler
+--[[
+    DEPRECATED - Armor Progression Setup Command Handler
+    
+    This file is NO LONGER USED and has been superseded by the equipment distribution system.
+    
+    REASON FOR DEPRECATION:
+    - The armor_sets.lua configuration file now serves as the authoritative source for all armor configurations
+    - Equipment distribution is now automatic based on armor piece types defined in armor_sets.lua
+    - The core/evaluate.lua Gate 1A equipment check and core/looting.lua member-aware distribution
+      provide intelligent, satisfaction-based armor distribution
+    - Individual item "Keep" rules are no longer necessary
+    
+    HISTORICAL NOTE:
+    This file originally used /yalm2 setitem commands to bulk-configure 530 individual armor craft 
+    component items. With the new system, armor_sets.lua (3,231 lines, 420 sets) replaces this 
+    functionality with a more elegant, database-driven approach.
+    
+    ARCHIVED: December 22, 2025
+    
+    To use the new equipment distribution system:
+    1. Ensure config/armor_sets.lua is loaded
+    2. The system automatically recognizes configured armor sets
+    3. Equipment distribution works through core/evaluate.lua and core/looting.lua
+]]
+
+-- Armor Progression Setup Command Handler (DEPRECATED)
 -- Integrates with YALM2 command system
 -- Place in: config/commands/armor_progression_setup.lua
 
@@ -169,8 +194,6 @@ local function setupArmorProgression()
         "Scale Touched Cap Facet", "Scale Touched Sleeve Facet", "Scale Touched Bracer Facet",
         "Scale Touched Gloves Facet", "Scale Touched Shoes Facet", "Scale Touched Pants Facet",
         "Scale Touched Tunic Facet",
-        
-        -- ===== EXPANSION 11: Scaled & Scaleborn Facets (2 × 7) =====
         "Scaled Cap Facet", "Scaled Sleeve Facet", "Scaled Bracer Facet", "Scaled Gloves Facet",
         "Scaled Shoes Facet", "Scaled Pants Facet", "Scaled Tunic Facet",
         "Scaleborn Cap Facet", "Scaleborn Sleeve Facet", "Scaleborn Bracer Facet", "Scaleborn Gloves Facet",
