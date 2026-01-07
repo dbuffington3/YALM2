@@ -40,6 +40,8 @@ end
 local function cache_character_bags(character_name, dannet_delay)
 	local bag_cache = get_character_bag_cache(character_name)
 	
+	debug_logger.debug("CACHE_BAGS: Starting cache build for %s", character_name)
+	
 	-- Query each bag slot (23-32) - slot 23 is first bag, slots 24-32 are additional bags
 	for bag_slot = 23, 32 do
 		-- Query bag name - returns NULL if no bag in slot
@@ -70,9 +72,14 @@ local function cache_character_bags(character_name, dannet_delay)
 					total_slots = total_slots,
 					is_tradeskill_bag = (bagtype == 58)
 				}
+				
+				debug_logger.debug("CACHE_BAGS: Slot %d - %s (ID:%d, bagtype:%d, tradeskill:%s, slots:%d)", 
+					bag_slot, bag_name, bag_id, bagtype, tostring(bagtype == 58), total_slots)
 			end
 		end
 	end
+	
+	debug_logger.debug("CACHE_BAGS: Cache build complete for %s with %d bags", character_name, utils.length(bag_cache))
 end
 
 inventory.check_group_member = function(member, list, dannet_delay, always_loot)
