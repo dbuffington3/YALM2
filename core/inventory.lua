@@ -407,7 +407,6 @@ inventory.count_available_slots_for_item_remote = function(character_name, item_
 			if last_item and last_item ~= "NULL" and last_item ~= "" then
 				-- Last slot has an item, bag is probably full or very full
 				-- Be conservative: assume NO available slots
-				debug_logger.debug("COUNT_SLOTS_REMOTE: Slot %d last slot FULL (%s) - assuming 0 open slots", bag_slot, last_item)
 				open_slots = 0
 			else
 				-- Last slot is empty, check first slot
@@ -417,21 +416,18 @@ inventory.count_available_slots_for_item_remote = function(character_name, item_
 				if first_item and first_item ~= "NULL" and first_item ~= "" then
 					-- First slot has item, but last doesn't: assume 1-2 slots available
 					-- Being conservative to avoid inventory-full errors
-					debug_logger.debug("COUNT_SLOTS_REMOTE: Slot %d first FULL (%s), last EMPTY - assuming 1 open slot", bag_slot, first_item)
 					open_slots = 1
 				else
 					-- First slot is empty: bag has space
-					debug_logger.debug("COUNT_SLOTS_REMOTE: Slot %d first EMPTY - assuming 30%% available", bag_slot)
 					open_slots = math.max(2, math.ceil(bag_info.total_slots * 0.3))
 				end
 			end
 			
-			debug_logger.debug("COUNT_SLOTS_REMOTE: Slot %d contributes %d open slots", bag_slot, open_slots)
 			available_slots = available_slots + open_slots
 		end
 	end
 	
-	debug_logger.info("COUNT_SLOTS_REMOTE: %s total available slots: %d", character_name, available_slots)
+	debug_logger.debug("COUNT_SLOTS_REMOTE: %s for %s - total available slots: %d", character_name, item_data.name, available_slots)
 	return available_slots
 end
 
