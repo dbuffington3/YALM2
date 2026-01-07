@@ -5,6 +5,8 @@ local dannet = require("yalm2.lib.dannet")
 
 local utils = require("yalm2.lib.utils")
 
+local debug_logger = require("yalm2.lib.debug")
+
 local inventory = {}
 
 -- ============================================================================
