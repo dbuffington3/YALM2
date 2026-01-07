@@ -382,16 +382,21 @@ local actor = actors.register(function(message)
             
         elseif message.content.id == 'INCOMING_TASKS' then
             if drawGUI == true then  -- Only UI instance processes incoming tasks
-                -- Only accept task data from collectors we started (prevents cross-group pollution)
-                local is_known_collector = false
-                for _, collector in pairs(known_collectors) do
-                    if collector:lower() == message.sender.character:lower() then
-                        is_known_collector = true
-                        break
+                -- Accept task data from:
+                -- 1. The local character (UI coordinator updating its own tasks)
+                -- 2. Known collectors we started (prevents cross-group pollution)
+                local is_valid_source = (message.sender.character:lower() == my_name:lower())  -- Accept own updates
+                
+                if not is_valid_source then
+                    for _, collector in pairs(known_collectors) do
+                        if collector:lower() == message.sender.character:lower() then
+                            is_valid_source = true
+                            break
+                        end
                     end
                 end
                 
-                if is_known_collector then
+                if is_valid_source then
                     task_data.tasks[message.sender.character] = message.content.tasks
                     table.insert(peer_list, message.sender.character)
                     table.sort(peer_list)
@@ -1743,20 +1748,6 @@ local function init()
         task_data.tasks[my_name] = task_data.my_tasks
         table.insert(peer_list, my_name)
         table.sort(peer_list)
-        
-        -- CRITICAL FIX: UI coordinator must detect its OWN task updates
-        -- The collector instance can't update the UI's task_data because it runs with drawGUI=false
-        -- So the UI must listen directly to its own task update events
-        local function ui_update_event()
-            Write.Debug("[NativeQuest] UI coordinator detected own task update")
-            task_data.my_tasks = get_tasks()
-            task_data.tasks[my_name] = task_data.my_tasks
-            triggers.timestamp = mq.gettime()
-        end
-        
-        mq.event('ui_update_event', '#*#Your task #*# has been updated#*#', ui_update_event)
-        mq.event('ui_new_task_event', '#*#You have been assigned the task#*#', ui_update_event)
-        mq.event('ui_shared_task_event', '#*#Your shared task #*# has ended.', ui_update_event)
     end
     mq.bind('/yalm2quest', cmd_yalm2quest)
     mq.cmd(string.format('/echo %s \\agstarting for %s. Use \\ar/yalm2quest help \\agfor commands.', taskheader, my_name))
