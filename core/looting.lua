@@ -1348,8 +1348,35 @@ looting.handle_master_looting = function(global_settings, char_settings)
 		return
 	end
 
+	-- FINAL INVENTORY CHECK: Verify member has space before giving item
+	-- This catches cases where tradeskill-only bags have open slots but can't hold the item
 	if item_name == mq.TLO.AdvLoot[loot_list_tlo](1).Name() then
-		Write.Info("Looting \a-t%s\ax → \ao%s\ax", item_name, member.Name())
+		local member_name = member.Name()
+		local item_id = mq.TLO.AdvLoot[loot_list_tlo](1).ID()
+		
+		-- For remote characters, verify they have actual available slots for this item
+		if member_name ~= mq.TLO.Me.CleanName() then
+			-- Query remote inventory
+			local available_slots = inventory.count_available_slots_for_item_remote(
+				member_name, 
+				item_id, 
+				global_settings.settings.dannet_delay
+			)
+			
+			if available_slots == 0 then
+				Write.Warn("INVENTORY FULL: %s cannot hold \a-t%s\ax - inventory full or no compatible bag slots", member_name, item_name)
+				debug_logger.warn("INVENTORY_CHECK: %s has 0 available slots for %s (ID: %d) - LEAVING ON CORPSE", 
+					member_name, item_name, item_id)
+				looting.leave_item()
+				looting.wait_for_loot_clear(item_name)
+				return
+			else
+				debug_logger.info("INVENTORY_CHECK: %s has %d available slots for %s - proceeding with distribution", 
+					member_name, available_slots, item_name)
+			end
+		end
+		
+		Write.Info("Looting \a-t%s\ax → \ao%s\ax", item_name, member_name)
 		looting.give_item(member, item_name)
 
 		mq.delay(global_settings.settings.distribute_delay)
