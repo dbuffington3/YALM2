@@ -385,8 +385,13 @@ inventory.count_available_slots_for_item_remote = function(character_name, item_
 		bag_cache = get_character_bag_cache(character_name)
 	end
 	
+	debug_logger.debug("COUNT_SLOTS_REMOTE: Bag cache for %s has %d entries", character_name, utils.length(bag_cache))
+	
 	-- Find tradeskill-only bags and sum their free slots
 	for bag_slot, bag_info in pairs(bag_cache) do
+		debug_logger.debug("COUNT_SLOTS_REMOTE: Checking bag slot %d - bagtype=%d, is_tradeskill_bag=%s, total_slots=%d", 
+			bag_slot, bag_info.bagtype or -1, tostring(bag_info.is_tradeskill_bag), bag_info.total_slots or 0)
+		
 		if bag_info.is_tradeskill_bag then
 			-- This is a tradeskill-only bag, query its free slots
 			local bag_total = tonumber(bag_info.total_slots) or 0
@@ -394,7 +399,7 @@ inventory.count_available_slots_for_item_remote = function(character_name, item_
 				string.format("Me.Inventory[%d].Items", bag_slot), dannet_delay)) or 0
 			local bag_free = math.max(0, bag_total - bag_used)
 			
-			debug_logger.debug("COUNT_SLOTS_REMOTE: Tradeskill bag slot %d has %d free slots", bag_slot, bag_free)
+			debug_logger.debug("COUNT_SLOTS_REMOTE: Tradeskill bag slot %d has %d/%d free slots", bag_slot, bag_free, bag_total)
 			tradeskill_bag_free_slots = tradeskill_bag_free_slots + bag_free
 		end
 	end
