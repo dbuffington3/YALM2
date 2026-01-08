@@ -1690,8 +1690,13 @@ local function main()
             end
             
             -- Store in shared quest data store (works across script isolation boundaries)
-            quest_data_store.set_quest_data_with_qty(quest_data_with_qty)
-            quest_data_store.set_quest_data(quest_data_string)
+            -- CRITICAL: Only update if we have data. Don't overwrite with empty data!
+            -- The manual refresh sets the data, and we don't want the automatic refresh
+            -- to clear it just because the efficient cache-only refresh found nothing.
+            if quest_data_with_qty and #quest_data_with_qty > 0 then
+                quest_data_store.set_quest_data_with_qty(quest_data_with_qty)
+                quest_data_store.set_quest_data(quest_data_string)
+            end
             
             -- NO USER MESSAGES IN AUTOMATIC PROCESSING!
         end
