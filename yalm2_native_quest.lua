@@ -1307,10 +1307,17 @@ local function manual_refresh_with_messages(show_messages)
     local all_tasks = {}
     if task_data.my_tasks and #task_data.my_tasks > 0 then
         all_tasks[my_name] = task_data.my_tasks
+        Write.Debug("MANUAL_REFRESH: Added ML's own tasks: %d tasks for %s", #task_data.my_tasks, my_name)
+    else
+        Write.Debug("MANUAL_REFRESH: ML's own tasks empty or nil (my_tasks=%s, count=%s)", 
+            tostring(task_data.my_tasks ~= nil), 
+            task_data.my_tasks and #task_data.my_tasks or "N/A")
     end
     for character_name, tasks in pairs(task_data.tasks) do
         all_tasks[character_name] = tasks
+        Write.Debug("MANUAL_REFRESH: Added collector tasks: %d tasks for %s", #tasks, character_name)
     end
+    Write.Debug("MANUAL_REFRESH: all_tasks now has %d characters total", #all_tasks)
     
     -- Process all tasks (ML + collectors)
     for character_name, tasks in pairs(all_tasks) do
