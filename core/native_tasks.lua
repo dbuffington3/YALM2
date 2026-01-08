@@ -300,29 +300,33 @@ function native_tasks.get_characters_needing_item(item_name)
     local quest_data_str = quest_data_store.get_quest_data_with_qty()
     if quest_data_str and quest_data_str:len() > 0 then
         -- Parse quest data string format: "ItemName:char1:qty1,char2:qty2|ItemName2:..."
+        -- Example: "Crystal Shard:Vaeloraa:1|"
         for item_part in quest_data_str:gmatch("[^|]+") do
             if item_part:len() > 0 then
-                local parts = {}
-                for part in item_part:gmatch("[^:]+") do
-                    table.insert(parts, part)
-                end
-                
-                if #parts >= 2 then
-                    local db_item_name = parts[1]
+                -- Split by first colon to get item name and characters part
+                local colon_pos = item_part:find(":")
+                if colon_pos then
+                    local db_item_name = item_part:sub(1, colon_pos - 1)
+                    local chars_part = item_part:sub(colon_pos + 1)  -- Everything after first colon
                     
-                    -- Check for exact or fuzzy match
+                    -- Check for exact match
                     if db_item_name:lower() == item_name:lower() then
                         Write.Debug("[NativeQuest] Found quest data match for '%s' in quest_data_store", item_name)
                         
-                        -- Parse characters (skip first part which is item name, and every other part)
-                        for i = 2, #parts, 1 do
-                            -- This is a character:qty pair
-                            local char_parts = {}
-                            for char_part in parts[i]:gmatch("[^:]+") do
-                                table.insert(char_parts, char_part)
-                            end
-                            if #char_parts >= 1 then
-                                table.insert(characters_needing, char_parts[1])  -- character name
+                        -- Parse character:qty pairs (comma-separated)
+                        for char_qty_pair in chars_part:gmatch("[^,]+") do
+                            -- Each pair is "CharName:Qty"
+                            local char_colon = char_qty_pair:find(":")
+                            if char_colon then
+                                local char_name = char_qty_pair:sub(1, char_colon - 1)
+                                if char_name:len() > 0 then
+                                    table.insert(characters_needing, char_name)
+                                end
+                            else
+                                -- No colon, whole thing is character name (qty was missing)
+                                if char_qty_pair:len() > 0 then
+                                    table.insert(characters_needing, char_qty_pair)
+                                end
                             end
                         end
                         
