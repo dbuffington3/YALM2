@@ -1596,10 +1596,95 @@ local function main()
             =====================================================================================
             ]]--
             
-            -- OPTIMIZATION: Use efficient refresh with cached objectives only
-            -- This skips ALL extraction and fuzzy matching if objective is cached
-            -- Dramatically reduces processing overhead on every 3-second cycle
-            local quest_items = efficient_refresh_from_cache()
+            -- CRITICAL: For quest detection to work with NEW objectives (not yet cached),
+            -- we must do FULL extraction, not just cached lookup
+            -- The automatic 3-second refresh does a SILENT full refresh (no user messages)
+            -- This ensures new quest items are detected and extracted immediately
+            
+            -- Build quest items from current task data with full extraction
+            local quest_items = {}
+            
+            -- Get all active objectives from current task data
+            for character_name, tasks in pairs(task_data.tasks or {}) do
+                if tasks then
+                    for _, task in ipairs(tasks) do
+                        if task.objectives then
+                            for _, objective in ipairs(task.objectives) do
+                                -- Skip completed objectives
+                                if objective and objective.objective and objective.status ~= "Done" then
+                                    -- Try to extract item name
+                                    local item_name = extract_quest_item_from_objective(objective.objective)
+                                    if item_name then
+                                        -- Fuzzy match to database
+                                        local matched_item = quest_interface.find_matching_quest_item(objective.objective)
+                                        if matched_item then
+                                            if not quest_items[matched_item] then
+                                                quest_items[matched_item] = {}
+                                            end
+                                            
+                                            -- Add character if not already present
+                                            local already_added = false
+                                            for _, existing in ipairs(quest_items[matched_item]) do
+                                                if existing.character == character_name then
+                                                    already_added = true
+                                                    break
+                                                end
+                                            end
+                                            
+                                            if not already_added then
+                                                table.insert(quest_items[matched_item], {
+                                                    character = character_name,
+                                                    status = objective.status
+                                                })
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            
+            -- Also check ML's own tasks
+            if task_data.my_tasks then
+                for _, task in ipairs(task_data.my_tasks) do
+                    if task.objectives then
+                        for _, objective in ipairs(task.objectives) do
+                            if objective and objective.objective and objective.status ~= "Done" then
+                                local item_name = extract_quest_item_from_objective(objective.objective)
+                                if item_name then
+                                    local matched_item = quest_interface.find_matching_quest_item(objective.objective)
+                                    if matched_item then
+                                        if not quest_items[matched_item] then
+                                            quest_items[matched_item] = {}
+                                        end
+                                        
+                                        local already_added = false
+                                        for _, existing in ipairs(quest_items[matched_item]) do
+                                            if existing.character == my_name then
+                                                already_added = true
+                                                break
+                                            end
+                                        end
+                                        
+                                        if not already_added then
+                                            table.insert(quest_items[matched_item], {
+                                                character = my_name,
+                                                status = objective.status
+                                            })
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            
+            if not quest_items then
+                quest_items = {}
+            end
             
             -- Store in global variable for YALM2 core to access
             _G.YALM2_QUEST_DATA = {
