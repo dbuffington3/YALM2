@@ -1299,13 +1299,74 @@ local function manual_refresh_with_messages(show_messages)
         end
     end
     
-    -- Get all cached objectives and remove ones that are no longer active (quest stage complete)
+    -- Get all cached objectives and remove ones that are marked as DONE (completed in task window)
+    -- DON'T remove objectives just because they're not in our current active list
+    -- (they might be in other characters' tasks that we don't have full data for yet)
     local cached_objs = quest_db.get_all_cached_objectives()
-    for cached_obj_text, _ in pairs(cached_objs) do
-        if not active_objectives[cached_obj_text] then
-            -- This objective is no longer active - remove from cache so new ones are discovered
-            quest_db.delete_objective_cache_entry(cached_obj_text)
-            Write.Debug("MANUAL_REFRESH: Removed completed objective from cache: '%s'", cached_obj_text)
+    for cached_obj_text, cache_data in pairs(cached_objs) do
+        -- CONSERVATIVE: Only delete if we can CONFIRM it's done in the actual task window
+        -- Check if this objective appears in ANY character's tasks as NOT done
+        local objective_is_active = false
+        
+        -- Check all tasks
+        for char_name, tasks in pairs(task_data.tasks or {}) do
+            if tasks then
+                for _, task in ipairs(tasks) do
+                    if task.objectives then
+                        for _, obj in ipairs(task.objectives) do
+                            if obj and obj.objective and obj.objective == cached_obj_text and obj.status ~= "Done" then
+                                objective_is_active = true
+                                break
+                            end
+                        end
+                    end
+                    if objective_is_active then break end
+                end
+            end
+            if objective_is_active then break end
+        end
+        
+        -- Also check ML's own tasks
+        if not objective_is_active and task_data.my_tasks then
+            for _, task in ipairs(task_data.my_tasks) do
+                if task.objectives then
+                    for _, obj in ipairs(task.objectives) do
+                        if obj and obj.objective and obj.objective == cached_obj_text and obj.status ~= "Done" then
+                            objective_is_active = true
+                            break
+                        end
+                    end
+                end
+                if objective_is_active then break end
+            end
+        end
+        
+        -- Only delete if we're SURE it's done (explicitly marked "Done" in task window)
+        if not objective_is_active then
+            -- Check if it appears as "Done" anywhere
+            local objective_is_done = false
+            for char_name, tasks in pairs(task_data.tasks or {}) do
+                if tasks then
+                    for _, task in ipairs(tasks) do
+                        if task.objectives then
+                            for _, obj in ipairs(task.objectives) do
+                                if obj and obj.objective and obj.objective == cached_obj_text and obj.status == "Done" then
+                                    objective_is_done = true
+                                    break
+                                end
+                            end
+                        end
+                        if objective_is_done then break end
+                    end
+                end
+                if objective_is_done then break end
+            end
+            
+            -- Only delete if definitely marked "Done", otherwise keep it (it might be in progress elsewhere)
+            if objective_is_done then
+                quest_db.delete_objective_cache_entry(cached_obj_text)
+                Write.Debug("MANUAL_REFRESH: Removed completed objective from cache: '%s'", cached_obj_text)
+            end
         end
     end
     
@@ -1656,6 +1717,9 @@ local function main()
                                 if item_name then
                                     local matched_item = quest_interface.find_matching_quest_item(objective.objective)
                                     if matched_item then
+                                        -- CRITICAL: Cache the objective so UI shows item name, not "not cached yet"
+                                        quest_db.store_objective(objective.objective, task.task_name, matched_item)
+                                        
                                         if not quest_items[matched_item] then
                                             quest_items[matched_item] = {}
                                         end
