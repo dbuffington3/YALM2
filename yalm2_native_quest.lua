@@ -432,6 +432,8 @@ end
 
 local function update_tasks()
     task_data.my_tasks = get_tasks()
+    -- Store in task_data.tasks so it's available for manual refresh
+    task_data.tasks[my_name] = task_data.my_tasks
     mq.delay(3000, function() return not mq.TLO.Window('TaskWnd').Open() end)
     actor:send({ id = 'INCOMING_TASKS', tasks = task_data.my_tasks })
 end
