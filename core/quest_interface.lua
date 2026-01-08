@@ -293,14 +293,14 @@ quest_interface.retry_match_with_custom_term = function(objective_text, custom_s
         return nil
     end
     
-    Write.Info("ITEM_MATCH: Manual retry with custom term: '%s' for objective: '%s'", custom_search_term, objective_text)
+    Write.Debug("ITEM_MATCH: Manual retry with custom term: '%s' for objective: '%s'", custom_search_term, objective_text)
     
     -- Try exact match first with custom search term
     local query = string.format("SELECT * FROM raw_item_data WHERE LOWER(name) = LOWER('%s') AND questitem = 1 LIMIT 1", 
         custom_search_term:gsub("'", "''"))
     
     for row in YALM2_Database.database:nrows(query) do
-        Write.Info("ITEM_MATCH: Manual retry found EXACT match: %s", row.name)
+        Write.Debug("ITEM_MATCH: Manual retry found EXACT match: %s", row.name)
         return row.name
     end
     
@@ -309,7 +309,7 @@ quest_interface.retry_match_with_custom_term = function(objective_text, custom_s
         custom_search_term:gsub("'", "''"))
     
     for row in YALM2_Database.database:nrows(query) do
-        Write.Info("ITEM_MATCH: Manual retry found fuzzy match: %s", row.name)
+        Write.Debug("ITEM_MATCH: Manual retry found fuzzy match: %s", row.name)
         return row.name
     end
     
@@ -453,7 +453,7 @@ quest_interface.find_matching_quest_item = function(objective_text)
         Write.Error("ITEM_MATCH: NO FILTERED WORDS! Cleaned='%s', Words=%s", cleaned, 
             table.concat(words, "|"))
     else
-        Write.Info("ITEM_MATCH: Processing '%s' -> Filtered=%s", objective_text, 
+        Write.Debug("ITEM_MATCH: Processing '%s' -> Filtered=%s", objective_text, 
             table.concat(filtered_words, ", "))
     end
     
@@ -491,7 +491,7 @@ quest_interface.find_matching_quest_item = function(objective_text)
         end
     end
     
-    Write.Info("ITEM_MATCH: Search terms built: %s", table.concat(unique_terms, " | "))
+    Write.Debug("ITEM_MATCH: Search terms built: %s", table.concat(unique_terms, " | "))
     
     -- Try each search term in order
     for _, search_term in ipairs(unique_terms) do
@@ -501,7 +501,7 @@ quest_interface.find_matching_quest_item = function(objective_text)
                 search_term:gsub("'", "''"))
             Write.Debug("ITEM_MATCH: Trying exact match: '%s'", search_term)
             for row in YALM2_Database.database:nrows(query) do
-                Write.Info("ITEM_MATCH: FOUND EXACT MATCH: %s", row.name)
+                Write.Debug("ITEM_MATCH: FOUND EXACT MATCH: %s", row.name)
                 return row.name
             end
         end
@@ -581,7 +581,7 @@ quest_interface.find_matching_quest_item = function(objective_text)
         
         if #sorted_matches > 0 then
             local best_match = sorted_matches[1]
-            Write.Info("ITEM_MATCH: Found %d fuzzy matches for '%s', returning best match: '%s' (score: %.1f, search: '%s')", 
+            Write.Debug("ITEM_MATCH: Found %d fuzzy matches for '%s', returning best match: '%s' (score: %.1f, search: '%s')", 
                 #sorted_matches, objective_text, best_match.name, best_match.score, best_match.search_term)
             debug_logger.debug("ITEM_MATCH: Top 5 matches for '%s': %s", objective_text, 
                 table.concat({sorted_matches[1].name, sorted_matches[2] and sorted_matches[2].name or "", 
@@ -590,7 +590,7 @@ quest_interface.find_matching_quest_item = function(objective_text)
         end
     end
     
-    Write.Info("ITEM_MATCH: No quest items found matching '%s' in database. Searched for: %s. Filtered words: %s", 
+    Write.Debug("ITEM_MATCH: No quest items found matching '%s' in database. Searched for: %s. Filtered words: %s", 
         objective_text, table.concat(unique_terms, " | "), table.concat(filtered_words, ", "))
     return nil
 end
