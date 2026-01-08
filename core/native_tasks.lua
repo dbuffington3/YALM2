@@ -298,7 +298,10 @@ function native_tasks.get_characters_needing_item(item_name)
     -- CRITICAL FIX: Check quest_data_store FIRST (fresh data from manual refresh)
     -- This data is actively maintained by yalm2_native_quest.lua and won't go stale
     local quest_data_str = quest_data_store.get_quest_data_with_qty()
+    Write.Debug("[NativeQuest] quest_data_store check - data length: %d, value: %s", 
+        (quest_data_str and quest_data_str:len() or 0), (quest_data_str or "nil"))
     if quest_data_str and quest_data_str:len() > 0 then
+        Write.Debug("[NativeQuest] Parsing quest_data_store for '%s'", item_name)
         -- Parse quest data string format: "ItemName:char1:qty1,char2:qty2|ItemName2:..."
         -- Example: "Crystal Shard:Vaeloraa:1|"
         for item_part in quest_data_str:gmatch("[^|]+") do
