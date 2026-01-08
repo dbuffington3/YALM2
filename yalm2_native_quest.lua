@@ -165,6 +165,7 @@ local function extract_quest_item_from_objective(objective_text)
         "Collect %d+ ?(.+) from",          -- "Collect 5 Bone Fragments from skeletons"
         "Loot %d+ ?(.+) from",             -- "Loot 4 antheia bloom seeds from the rotdogs"
         "Obtain %d+ ?(.+) from",           -- "Obtain 2 crystal shards from corrupted akhevan"
+        "Obtain [a-z]+ (.+) from",         -- "Obtain a crystal shard from corrupted akhevan" (article + item)
         "Gather (.+) from",                -- "Gather Werewolf Pelts from wolves" 
         "Collect (.+) %- %d+/%d+",         -- "Collect Bone Fragments - 2/5"
     }
