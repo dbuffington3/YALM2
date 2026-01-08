@@ -158,11 +158,13 @@ local function extract_quest_item_from_objective(objective_text)
         "Collect the (.+['''].+)",         -- "Collect the X's Y"
         "Gather the (.+['''].+)",          -- "Gather the X's Y"
         "Recover the (.+['''].+)",         -- "Recover the X's Y"
+        "Obtain the (.+['''].+)",          -- "Obtain the X's Y"
         
         "[Rr]etr[ie][ie]ve one of (.+['''].+)",  -- "Retrieve one of Faernoc's fang" (handles typos: Retreive, RetrIeve, etc.)
         "Gather some (.+) from",           -- "Gather some Orbweaver Silks from the orbweaver spiders"
         "Collect %d+ ?(.+) from",          -- "Collect 5 Bone Fragments from skeletons"
         "Loot %d+ ?(.+) from",             -- "Loot 4 antheia bloom seeds from the rotdogs"
+        "Obtain %d+ ?(.+) from",           -- "Obtain 2 crystal shards from corrupted akhevan"
         "Gather (.+) from",                -- "Gather Werewolf Pelts from wolves" 
         "Collect (.+) %- %d+/%d+",         -- "Collect Bone Fragments - 2/5"
     }
