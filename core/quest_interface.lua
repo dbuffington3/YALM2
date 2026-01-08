@@ -420,7 +420,9 @@ quest_interface.find_matching_quest_item = function(objective_text)
     local common_words_set = {
         of=true, the=true, a=true, an=true, from=true, to=true, on=true, at=true, by=true, 
         with=true, piece=true, pieces=true, bit=true, part=true, 
-        item=true, thing=true, stuff=true, material=true, sample=true
+        item=true, thing=true, stuff=true, material=true, sample=true,
+        -- Action verbs from objectives - should never be part of item names
+        obtain=true, loot=true, collect=true, gather=true, recover=true, retrieve=true
     }
     
     -- Filter out common words from the words array AND singularize
