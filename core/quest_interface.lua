@@ -223,7 +223,6 @@ quest_interface.get_characters_needing_item = function(item_name)
     else
         debug_logger.warn("QUEST_INTERFACE: native_tasks module not available")
     end
-    return {}
 end
 
 --- Get all quest items currently being tracked

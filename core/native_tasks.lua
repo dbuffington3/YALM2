@@ -295,7 +295,48 @@ function native_tasks.get_characters_needing_item(item_name)
     local task_name = nil
     local objective = nil
     
-    -- PRIMARY: Read from database (populated by manual refresh)
+    -- CRITICAL FIX: Check quest_data_store FIRST (fresh data from manual refresh)
+    -- This data is actively maintained by yalm2_native_quest.lua and won't go stale
+    local quest_data_str = quest_data_store.get_quest_data_with_qty()
+    if quest_data_str and quest_data_str:len() > 0 then
+        -- Parse quest data string format: "ItemName:char1:qty1,char2:qty2|ItemName2:..."
+        for item_part in quest_data_str:gmatch("[^|]+") do
+            if item_part:len() > 0 then
+                local parts = {}
+                for part in item_part:gmatch("[^:]+") do
+                    table.insert(parts, part)
+                end
+                
+                if #parts >= 2 then
+                    local db_item_name = parts[1]
+                    
+                    -- Check for exact or fuzzy match
+                    if db_item_name:lower() == item_name:lower() then
+                        Write.Debug("[NativeQuest] Found quest data match for '%s' in quest_data_store", item_name)
+                        
+                        -- Parse characters (skip first part which is item name, and every other part)
+                        for i = 2, #parts, 1 do
+                            -- This is a character:qty pair
+                            local char_parts = {}
+                            for char_part in parts[i]:gmatch("[^:]+") do
+                                table.insert(char_parts, char_part)
+                            end
+                            if #char_parts >= 1 then
+                                table.insert(characters_needing, char_parts[1])  -- character name
+                            end
+                        end
+                        
+                        if #characters_needing > 0 then
+                            Write.Debug("[NativeQuest] Found %d characters needing %s from quest_data_store", #characters_needing, item_name)
+                            return characters_needing, task_name, objective
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- FALLBACK: Read from database (populated by manual refresh)
     local quest_db = require("yalm2.lib.quest_database")
     if quest_db.init() then
         local all_items = quest_db.get_all_quest_items()
