@@ -295,13 +295,20 @@ function native_tasks.get_characters_needing_item(item_name)
     local task_name = nil
     local objective = nil
     
-    -- CRITICAL FIX: Check quest_data_store FIRST (fresh data from manual refresh)
-    -- This data is actively maintained by yalm2_native_quest.lua and won't go stale
-    local quest_data_str = quest_data_store.get_quest_data_with_qty()
-    Write.Debug("[NativeQuest] quest_data_store check - data length: %d, value: %s", 
-        (quest_data_str and quest_data_str:len() or 0), (quest_data_str or "nil"))
+    -- CRITICAL FIX: Check MQ2 variable FIRST (fresh data from yalm2_native_quest automatic refresh)
+    -- yalm2_native_quest sets YALM2_Quest_Items_WithQty every 3 seconds with fresh quest data
+    -- This is guaranteed to be in-sync with what the master coordinator sees
+    local quest_data_str = nil
+    if mq.TLO.Defined('YALM2_Quest_Items_WithQty')() then
+        quest_data_str = tostring(mq.TLO.YALM2_Quest_Items_WithQty)
+    end
+    
+    Write.Debug("[NativeQuest] MQ2 variable check - YALM2_Quest_Items_WithQty defined: %s, data length: %d", 
+        (mq.TLO.Defined('YALM2_Quest_Items_WithQty')() and "yes" or "no"), 
+        (quest_data_str and quest_data_str:len() or 0))
+    
     if quest_data_str and quest_data_str:len() > 0 then
-        Write.Debug("[NativeQuest] Parsing quest_data_store for '%s'", item_name)
+        Write.Debug("[NativeQuest] Parsing MQ2 variable for '%s'", item_name)
         -- Parse quest data string format: "ItemName:char1:qty1,char2:qty2|ItemName2:..."
         -- Example: "Crystal Shard:Vaeloraa:1|"
         for item_part in quest_data_str:gmatch("[^|]+") do
