@@ -435,6 +435,18 @@ local function update_tasks()
     task_data.my_tasks = get_tasks()
     -- Store in task_data.tasks so it's available for manual refresh
     task_data.tasks[my_name] = task_data.my_tasks
+    
+    -- CRITICAL: Update task_data.characters with the refreshed tasks
+    -- So that other characters' systems can see our updated task data
+    if not task_data.characters then
+        task_data.characters = {}
+    end
+    task_data.characters[my_name] = {
+        tasks = task_data.my_tasks,
+        last_updated = os.time(),
+        task_count = task_data.my_tasks and #task_data.my_tasks or 0
+    }
+    
     mq.delay(3000, function() return not mq.TLO.Window('TaskWnd').Open() end)
     actor:send({ id = 'INCOMING_TASKS', tasks = task_data.my_tasks })
 end
@@ -1450,7 +1462,8 @@ local function manual_refresh_with_messages(show_messages)
     local escaped_qty_string = quest_data_with_qty:gsub('"', '\\"')
     
     -- DEBUG: Log what we're about to set
-    Write.Debug("[MANUAL_REFRESH] About to set shared quest data: len=%d, value=%s", escaped_qty_string:len(), escaped_qty_string:sub(1, 50))
+    Write.Debug("[MANUAL_REFRESH] About to set shared quest data: len=%d, value=%s", escaped_qty_string:len(), escaped_qty_string:sub(1, 100))
+    Write.Info("[MANUAL_REFRESH] Quest data with qty: %s", quest_data_with_qty)
     
     -- Store in shared quest data store (works across script isolation boundaries)
     quest_data_store.set_quest_data_with_qty(quest_data_with_qty)

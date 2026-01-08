@@ -94,6 +94,9 @@ quest_interface.get_quest_characters_local = function(item_name)
     end
     
     debug_logger.debug("QUEST_INTERFACE: Looking for '%s' in quest_data (len=%d)", item_name, quest_data and quest_data:len() or 0)
+    if quest_data then
+        Write.Info("[QUEST_LOOKUP] Looking for '%s' - quest_data first 150 chars: %s", item_name, quest_data:sub(1, 150))
+    end
     
     if quest_data and quest_data:len() > 0 then
         for item_data in quest_data:gmatch("([^|]+)") do
