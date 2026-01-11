@@ -203,8 +203,12 @@ end
 
 --- Get characters who need a specific quest item
 quest_interface.get_characters_needing_item = function(item_name)
+    debug_logger.info("QUEST_INTERFACE: get_characters_needing_item called for '%s'", item_name)
+    
     if native_tasks and native_tasks.get_characters_needing_item then
         local chars, task_name, objective = native_tasks.get_characters_needing_item(item_name)
+        
+        debug_logger.info("QUEST_INTERFACE: native_tasks returned %d characters for '%s'", chars and #chars or 0, item_name)
         
         -- CRITICAL FIX: Filter to only characters in our group/raid
         local filtered_chars = {}
@@ -212,13 +216,14 @@ quest_interface.get_characters_needing_item = function(item_name)
             for _, char_name in ipairs(chars) do
                 if is_character_in_our_group(char_name) then
                     table.insert(filtered_chars, char_name)
-                    debug_logger.debug("QUEST_INTERFACE: Including %s (in our group/raid)", char_name)
+                    debug_logger.info("QUEST_INTERFACE: Including %s (in our group/raid)", char_name)
                 else
-                    debug_logger.debug("QUEST_INTERFACE: Excluding %s (not in our group/raid)", char_name)
+                    debug_logger.info("QUEST_INTERFACE: EXCLUDING %s (NOT in our group/raid)", char_name)
                 end
             end
         end
         
+        debug_logger.info("QUEST_INTERFACE: Final result for '%s': %d characters after filtering", item_name, #filtered_chars)
         return filtered_chars, task_name, objective
     else
         debug_logger.warn("QUEST_INTERFACE: native_tasks module not available")
@@ -499,12 +504,31 @@ quest_interface.find_matching_quest_item = function(objective_text)
     for _, search_term in ipairs(unique_terms) do
         if search_term and search_term ~= "" then
             -- Strategy 1: Exact match (case-insensitive) - MUST be a quest item
+            -- BUT: Only accept if the match covers ALL filtered words
             local query = string.format("SELECT * FROM raw_item_data WHERE LOWER(name) = LOWER('%s') AND questitem = 1 LIMIT 1", 
                 search_term:gsub("'", "''"))
             Write.Debug("ITEM_MATCH: Trying exact match: '%s'", search_term)
             for row in YALM2_Database.database:nrows(query) do
-                Write.Debug("ITEM_MATCH: FOUND EXACT MATCH: %s", row.name)
-                return row.name
+                -- Check that this match contains ALL filtered words
+                local item_name_lower = row.name:lower()
+                local all_words_found = true
+                for _, word in ipairs(filtered_words) do
+                    if not item_name_lower:find(word, 1, true) then
+                        -- Also try plural form
+                        local plural = word .. "s"
+                        if not item_name_lower:find(plural, 1, true) then
+                            all_words_found = false
+                            break
+                        end
+                    end
+                end
+                
+                if all_words_found then
+                    Write.Debug("ITEM_MATCH: FOUND EXACT MATCH (all %d words covered): %s", #filtered_words, row.name)
+                    return row.name
+                else
+                    Write.Debug("ITEM_MATCH: Skipping partial exact match '%s' - not all filtered words found", row.name)
+                end
             end
         end
     end

@@ -10,6 +10,7 @@ local utils = require("yalm2.lib.utils")
 local debug_logger = require("yalm2.lib.debug_logger")
 local quest_db = require("yalm2.lib.quest_database")
 local equipment_dist = require("yalm2.lib.equipment_distribution")
+local collection_scanner = require("yalm2.lib.collectionscanner")
 require("yalm2.lib.database")  -- Initialize the global Database table
 
 local looting = {}
@@ -40,6 +41,14 @@ end
 looting.get_keep_reason = function(preference)
 	if not preference then
 		return "unknown reason"
+	end
+	
+	-- Check if this is a collectible
+	if preference.data and preference.data.collectible then
+		if preference.data.collection_name then
+			return string.format("collectible for %s collection", preference.data.collection_name)
+		end
+		return "collectible item"
 	end
 	
 	-- Check if this is equipment distribution
@@ -312,7 +321,10 @@ local item_cost = loot_item and loot_item.item_db and (tonumber(loot_item.item_d
 		debug_logger.info("SOLO_LOOT: Processing item %s in solo mode", item_name)
 		
 		-- GATE 1: QUEST ITEMS AND TRADESKILL ITEMS (SOLO)
-		local is_quest_item = quest_interface.is_quest_item(item_name)
+		-- Use the questitem flag from the already-loaded item_db (looked up by ID)
+		-- DO NOT use quest_interface.is_quest_item() here - it does a name-based lookup
+		-- which can find a DIFFERENT item with the same name but different questitem flag!
+		local is_quest_item = loot_item and loot_item.item_db and tonumber(loot_item.item_db.questitem) == 1
 		
 		if is_quest_item or is_tradeskill then
 			if is_quest_item then
@@ -460,7 +472,10 @@ local item_cost = loot_item and loot_item.item_db and (tonumber(loot_item.item_d
 	-- ========================================
 	-- GATE 1: QUEST ITEMS AND TRADESKILL ITEMS (GROUP/ML PATH)
 	-- ========================================
-	local is_quest_item = quest_interface.is_quest_item(item_name)
+	-- Use the questitem flag from the already-loaded item_db (looked up by ID)
+	-- DO NOT use quest_interface.is_quest_item() here - it does a name-based lookup
+	-- which can find a DIFFERENT item with the same name but different questitem flag!
+	local is_quest_item = loot_item and loot_item.item_db and tonumber(loot_item.item_db.questitem) == 1
 	
 	if is_quest_item or is_tradeskill then
 		if is_quest_item then
@@ -588,47 +603,95 @@ local item_cost = loot_item and loot_item.item_db and (tonumber(loot_item.item_d
 		-- ========================================
 		-- COLLECTIBLE CHECK: Before GATE_2 value checks
 		-- ========================================
-		-- Collectibles bypass GATE_2 entirely and use one-per-character distribution
+		-- Collectibles bypass GATE_2 entirely and use smart achievement-based distribution
 		if loot_item and loot_item.item_db and loot_item.item_db.collectible and tonumber(loot_item.item_db.collectible) == 1 then
-			debug_logger.info("COLLECTIBLE_GATE: %s is a collectible - bypassing GATE_2, using one-per-character distribution", item_name)
-			Write.Info("Collectible item detected: %s - distributing one per character", item_name)
+			debug_logger.info("COLLECTIBLE_GATE: %s is a collectible - bypassing GATE_2, using achievement-based distribution", item_name)
+			Write.Info("Collectible item detected: %s - checking achievement database", item_name)
 			
+			local server_name = mq.TLO.EverQuest.Server()
 			local group_or_raid_tlo = looting.get_group_or_raid_tlo()
 			local count = looting.get_member_count(group_or_raid_tlo)
-			local found_recipient = false
 			
-			-- Find first character who doesn't have one
-			for i = 0, count - 1 do
-				local test_member = looting.get_valid_member(group_or_raid_tlo, i)
-				if test_member then
-					local member_name = test_member.CleanName()
+			-- PHASE 1: Check achievement database for characters who NEED this for their collection
+			-- This is the smart path - uses pre-scanned achievement data
+			local db_init_success = collection_scanner.init()
+			debug_logger.info("COLLECTIBLE_DB_INIT: collection_scanner.init() returned %s", tostring(db_init_success))
+			
+			if db_init_success then
+				local characters_needing = collection_scanner.find_characters_needing_item(item_name)
+				debug_logger.info("COLLECTIBLE_DB_QUERY: find_characters_needing_item('%s') returned %d results", item_name, #characters_needing)
+				
+				if #characters_needing > 0 then
+					debug_logger.info("COLLECTIBLE_DB: Found %d characters needing %s in database", #characters_needing, item_name)
 					
-					-- Check if this member already has the item (via DanNet query)
-					local has_item = false
-					local query_result = mq.TLO.DanNet(member_name).Observe("FindItem[=\"" .. item_name .. "\"]")()
-					if query_result and query_result ~= "NULL" then
-						has_item = true
-						debug_logger.info("COLLECTIBLE_CHECK: %s already has %s", member_name, item_name)
-					else
-						debug_logger.info("COLLECTIBLE_CHECK: %s does NOT have %s", member_name, item_name)
+					-- Log who needs it
+					for _, need_entry in ipairs(characters_needing) do
+						debug_logger.info("COLLECTIBLE_DB: %s (server: %s) needs %s", need_entry.character_name, need_entry.server_name, item_name)
 					end
 					
-					if not has_item then
-						Write.Info("COLLECTIBLE: Giving %s to %s (doesn't have one yet)", item_name, member_name)
-						debug_logger.info("COLLECTIBLE_DISTRIBUTION: Giving %s to %s", item_name, member_name)
-						looting.give_item(test_member, item_name)
-						mq.delay(dannet_delay or 1000)
-						return true, false, test_member, { setting = "Keep", data = { collectible = true } }
+					-- Find a group/raid member who needs it
+					-- Note: count = Group.Members() which excludes self, so we need 0 to count (inclusive)
+					-- Index 0 = self, Index 1-count = other members
+					local found_recipient = false
+					for i = 0, count do
+						local test_member = looting.get_valid_member(group_or_raid_tlo, i)
+						if test_member then
+							local member_name = test_member.CleanName()
+							debug_logger.info("COLLECTIBLE_DB: Checking group member %d: '%s'", i, member_name or "nil")
+							
+							-- Check if this member is in the needs list
+							for _, need_entry in ipairs(characters_needing) do
+								-- Compare character names (case-insensitive)
+								if need_entry.character_name:lower() == member_name:lower() and need_entry.server_name == server_name then
+									Write.Info("\agCOLLECTIBLE:\ax Giving \ay%s\ax to \ag%s\ax (needs for \ao%s\ax collection)", 
+										item_name, member_name, need_entry.collection_name)
+									debug_logger.info("COLLECTIBLE_DISTRIBUTION: Giving %s to %s for collection %s", 
+										item_name, member_name, need_entry.collection_name)
+									
+									looting.give_item(test_member, item_name)
+									mq.delay(dannet_delay or 1000)
+									
+									-- Mark as collected in the database so we don't give duplicates
+									collection_scanner.mark_item_collected(member_name, server_name, item_name)
+									
+									return true, false, test_member, { setting = "Keep", data = { collectible = true, collection_name = need_entry.collection_name } }
+								end
+							end
+						end
+					end
+					
+					-- Characters need it but none are in our group - KEEP for later distribution
+					-- Use /lua run yalm2/collection_distribute to trade these later
+					Write.Info("\aoCOLLECTIBLE:\ax Keeping \ay%s\ax - %d characters need it (not in current group)", item_name, #characters_needing)
+					debug_logger.info("COLLECTIBLE_DB: Keeping %s - %d characters need it but none in current group", item_name, #characters_needing)
+					
+					-- Keep to master looter for later distribution
+					local ml_member = mq.TLO.Me
+					looting.give_item(ml_member, item_name)
+					mq.delay(dannet_delay or 1000)
+					
+					return true, false, ml_member, { setting = "Keep", data = { collectible = true, for_distribution = true } }
+				else
+					-- Check if it's even a known collectible in our database
+					if collection_scanner.is_collectible(item_name) then
+						-- Known collectible, no one needs it
+						Write.Info("\ayCOLLECTIBLE:\ax No characters need \ay%s\ax - all have it", item_name)
+						debug_logger.info("COLLECTIBLE_DB: All scanned characters have %s", item_name)
+						looting.leave_item()
+						return false, false, nil, { setting = "Leave", data = { collectible_complete = true } }
+					else
+						debug_logger.info("COLLECTIBLE_DB: %s not found in database - falling back to inventory check", item_name)
 					end
 				end
 			end
 			
-		-- If everyone has one, leave on corpse
-		Write.Info("COLLECTIBLE: Everyone has %s - leaving on corpse", item_name)
-		debug_logger.info("COLLECTIBLE_DISTRIBUTION: All characters have %s - leaving on corpse", item_name)
-		looting.leave_item()
-		return false, false, nil, { setting = "Leave", data = { collectible_complete = true } }
-	end
+			-- Database lookup failed or item not in database - leave on corpse
+			-- (Phase 2 inventory fallback removed - all characters should run /yalm2 collectscan)
+			Write.Warn("\ayCOLLECTIBLE:\ax \ay%s\ax not in collection database - run /yalm2 collectscan on all characters", item_name)
+			debug_logger.info("COLLECTIBLE_DB: %s not in database - leaving on corpse (run collectscan)", item_name)
+			looting.leave_item()
+			return false, false, nil, { setting = "Leave", data = { collectible_not_in_db = true } }
+		end
 	
 	-- ========================================
 	-- ARMOR SET CHECK: Before GATE_2 value checks
@@ -1213,22 +1276,23 @@ looting.handle_master_looting = function(global_settings, char_settings)
 		
 		-- DIRECT TEST: Check if quest logic is accessible
 		if quest_interface and quest_interface.get_characters_needing_item then
-			local needed_by, task_name, objective = quest_interface.get_characters_needing_item("Blighted Blood Sample")
+			-- FIX: Use actual item_name, not hardcoded test value!
+			local quest_needed_by, quest_task_name, quest_objective = quest_interface.get_characters_needing_item(item_name)
 			debug_logger.debug("Quest characters check - needed_by=[%s], task_name='%s'", 
-				needed_by and table.concat(needed_by, ", ") or "nil",
-				task_name or "nil"
+				quest_needed_by and table.concat(quest_needed_by, ", ") or "nil",
+				quest_task_name or "nil"
 			)
 			
 			-- HOTFIX: Manually override preference for quest items ONLY
-			if needed_by and #needed_by > 0 then
-				debug_logger.debug("Overriding preference with quest characters for %s", item_name)
+			if quest_needed_by and #quest_needed_by > 0 then
+				debug_logger.info("Overriding preference with quest characters for %s: [%s]", item_name, table.concat(quest_needed_by, ", "))
 				
 				-- Find valid group members who need this item
 				local group_or_raid_tlo = mq.TLO.Raid.Members() > 0 and "Raid" or "Group"
 				local count = mq.TLO[group_or_raid_tlo].Members() or 0
 				local valid_recipients = {}
 				
-				for _, char_name in ipairs(needed_by) do
+				for _, char_name in ipairs(quest_needed_by) do
 					for i = 0, count do
 						local test_member = looting.get_valid_member(group_or_raid_tlo, i)
 						if test_member and test_member.CleanName():lower() == char_name:lower() then
@@ -1243,82 +1307,28 @@ looting.handle_master_looting = function(global_settings, char_settings)
 					local quest_preference = {
 						setting = "Keep",
 						list = valid_recipients,
-						data = { quest_item = true, task_name = task_name }
+						data = { quest_item = true, task_name = quest_task_name }
 					}
 					
 					-- Replace the preference with the new quest-specific one
 					preference = quest_preference
 					
-					Write.Error("*** QUEST HOTFIX: Created NEW preference list [%s] ***", table.concat(valid_recipients, ", "))
+					-- CRITICAL: Also set can_loot to true since we now have a valid recipient
+					can_loot = true
 					
-					-- Request quest data refresh after quest item distribution
-					-- This ensures we have current data for the next quest item
-					Write.Error("*** QUEST REFRESH: Requesting task update after quest item ***")
-					
-					-- Wait for and validate the refresh to prevent stale quest data
-					local refresh_success = false
-					local max_retries = 3
-					local retry_count = 0
-					
-					while not refresh_success and retry_count < max_retries do
-						retry_count = retry_count + 1
-						Write.Error("*** QUEST REFRESH: Attempt %d/%d ***", retry_count, max_retries)
-						
-						-- Native system auto-refreshes, no manual update needed
-						
-						-- Wait for response (TaskHUD usually responds within 1-2 seconds)
-						mq.delay(2000)
-						
-						-- Validate that we got updated quest data
-						if _G.YALM2_QUEST_DATA then
-							Write.Error("*** QUEST REFRESH: Success on attempt %d ***", retry_count)
-							refresh_success = true
-						else
-							Write.Warn("*** QUEST REFRESH: Failed attempt %d, TaskHUD did not respond ***", retry_count)
-							if retry_count < max_retries then
-								Write.Info("*** QUEST REFRESH: Retrying in 1 second... ***")
-								mq.delay(1000)
-							end
+					-- Find the first valid member to assign the loot to
+					for i = 0, count do
+						local test_member = looting.get_valid_member(group_or_raid_tlo, i)
+						if test_member and test_member.CleanName():lower() == valid_recipients[1]:lower() then
+							member = test_member
+							break
 						end
 					end
 					
-					if not refresh_success then
-						Write.Error("*** QUEST REFRESH: All attempts failed! Quest data may be stale ***")
-						Write.Warn("*** Continuing with potentially stale quest data - manual /yalm2 taskinfo refresh recommended ***")
-					else
-						-- Re-check quest data after successful refresh to see if anyone still needs this item type
-						local updated_needed_by, updated_task_name, updated_objective = quest_interface.get_characters_needing_item(item_name)
-						if updated_needed_by and #updated_needed_by > 0 then
-							Write.Error("*** QUEST REFRESH: After update, %s still needed by [%s] ***", item_name, table.concat(updated_needed_by, ", "))
-							
-							-- Update the preference list with current characters who still need it
-							local updated_valid_recipients = {}
-							for _, char_name in ipairs(updated_needed_by) do
-								for i = 0, count do
-									local test_member = looting.get_valid_member(group_or_raid_tlo, i)
-									if test_member and test_member.CleanName():lower() == char_name:lower() then
-										table.insert(updated_valid_recipients, char_name)
-										break
-									end
-								end
-							end
-							
-							if #updated_valid_recipients > 0 then
-								-- Update the quest preference with current recipients
-								preference.list = updated_valid_recipients
-								Write.Error("*** QUEST REFRESH: Updated recipient list to [%s] ***", table.concat(updated_valid_recipients, ", "))
-							else
-								-- No valid group members need it anymore, ignore the item
-								Write.Error("*** QUEST REFRESH: No valid group members need %s, changing to Ignore ***", item_name)
-								preference = { setting = "Ignore", list = {}, data = { quest_item_completed = true } }
-							end
-						else
-							Write.Error("*** QUEST REFRESH: After update, no one needs %s anymore ***", item_name)
-							-- Change preference to ignore since no one needs this quest item
-							Write.Error("*** QUEST REFRESH: Changing %s preference to Ignore ***", item_name)
-							preference = { setting = "Ignore", list = {}, data = { quest_item_completed = true } }
-						end
-					end
+					Write.Info("*** QUEST ITEM: %s → %s (needs for quest) ***", item_name, valid_recipients[1])
+					
+					-- Skip the refresh entirely - just distribute the item
+					-- The native quest system auto-refreshes every 3 seconds anyway
 				end
 			end
 		else

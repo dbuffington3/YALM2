@@ -170,7 +170,7 @@ function native_tasks.get_all_quest_items()
     local all_quest_items = {}
     
     -- DATABASE ACCESS: Read quest data from the quest_tasks database
-    Write.Info("[NativeQuest] Reading quest data from database...")
+    Write.Debug("[NativeQuest] Reading quest data from database...")
     
     -- Initialize database if needed
     if not quest_db.init() then
@@ -193,7 +193,7 @@ function native_tasks.get_all_quest_items()
             total_entries = total_entries + #chars
         end
         
-        Write.Info("[NativeQuest] Loaded %d quest items for %d character needs from database", 
+        Write.Debug("[NativeQuest] Loaded %d quest items for %d character needs from database", 
                    total_items, total_entries)
         Write.Debug("[NativeQuest] Quest items: %s", 
                    require("yalm2.lib.inspect")(all_quest_items))
@@ -289,7 +289,7 @@ end
 
 --- Get characters who need a specific quest item (quest_interface compatibility)
 function native_tasks.get_characters_needing_item(item_name)
-    Write.Debug("[NativeQuest] Getting characters needing: %s", item_name)
+    Write.Debug("[NativeQuest] ===== QUEST LOOKUP for '%s' =====", item_name)
     
     local characters_needing = {}
     local task_name = nil
@@ -299,13 +299,14 @@ function native_tasks.get_characters_needing_item(item_name)
     -- yalm2_native_quest sets YALM2_Quest_Items_WithQty every 3 seconds with fresh quest data
     -- This is guaranteed to be in-sync with what the master coordinator sees
     local quest_data_str = nil
-    if mq.TLO.Defined('YALM2_Quest_Items_WithQty')() then
+    local var_defined = mq.TLO.Defined('YALM2_Quest_Items_WithQty')()
+    if var_defined then
         quest_data_str = tostring(mq.TLO.YALM2_Quest_Items_WithQty)
     end
     
-    Write.Debug("[NativeQuest] MQ2 variable check - YALM2_Quest_Items_WithQty defined: %s, data length: %d", 
-        (mq.TLO.Defined('YALM2_Quest_Items_WithQty')() and "yes" or "no"), 
-        (quest_data_str and quest_data_str:len() or 0))
+    Write.Debug("[NativeQuest] MQ2 var defined: %s, content: '%s'", 
+        (var_defined and "YES" or "NO"), 
+        (quest_data_str or "nil"):sub(1, 200))
     
     if quest_data_str and quest_data_str:len() > 0 then
         Write.Debug("[NativeQuest] Parsing MQ2 variable for '%s'", item_name)
@@ -351,14 +352,22 @@ function native_tasks.get_characters_needing_item(item_name)
     end
     
     -- FALLBACK: Read from database (populated by manual refresh)
+    Write.Debug("[NativeQuest] MQ2 var lookup failed, falling back to DATABASE for '%s'", item_name)
     local quest_db = require("yalm2.lib.quest_database")
     if quest_db.init() then
         local all_items = quest_db.get_all_quest_items()
         
+        -- Log all items in database for debugging
+        local db_item_list = {}
+        for db_item_name, _ in pairs(all_items or {}) do
+            table.insert(db_item_list, db_item_name)
+        end
+        Write.Debug("[NativeQuest] Database contains %d quest items: %s", #db_item_list, table.concat(db_item_list, ", "))
+        
         if all_items and next(all_items) then
             -- Check exact match first
             if all_items[item_name] then
-                Write.Debug("[NativeQuest] Found exact match for '%s' in database", item_name)
+                Write.Debug("[NativeQuest] EXACT MATCH for '%s' in database!", item_name)
                 for _, char_info in ipairs(all_items[item_name]) do
                     table.insert(characters_needing, char_info.character)
                     -- Note: database doesn't store task_name/objective, only status
@@ -403,7 +412,7 @@ function native_tasks.get_characters_needing_item(item_name)
                 end
             end
         else
-            Write.Debug("[NativeQuest] Database has no quest items - database may be empty")
+            Write.Debug("[NativeQuest] DATABASE IS EMPTY - no quest items found!")
         end
     else
         Write.Error("[NativeQuest] Failed to initialize database")
@@ -412,7 +421,8 @@ function native_tasks.get_characters_needing_item(item_name)
     -- Quest data comes from the database, no need to wait for globals
     -- If database returned no results, the item simply isn't needed
     
-    Write.Debug("[NativeQuest] Final result for '%s': found %d characters", item_name, #characters_needing)
+    Write.Debug("[NativeQuest] ===== RESULT for '%s': %d characters: %s =====", 
+        item_name, #characters_needing, table.concat(characters_needing, ", "))
     return characters_needing, task_name, objective
 end
 

@@ -53,6 +53,8 @@ local function print_help()
 	Write.Help("\t  \ay/yalm2 tier\ax -- Display armor tier progression list")
 	Write.Help("\t  \ay/yalm2 cleanup\ax -- Scan inventory for NO DROP items to destroy (dry run)")
 	Write.Help("\t  \ay/yalm2 cleanup destroy\ax -- Actually destroy NO DROP items that shouldn't be kept")
+	Write.Help("\t  \ay/yalm2 collectscan\ax -- Scan character's collection achievements to database")
+	Write.Help("\t  \ay/yalm2 collectcheck <item>\ax -- Check which characters need a collectible item")
 
 	configuration.print_type_help(global_settings, configuration.types.command.settings_key)
 end
@@ -321,6 +323,41 @@ local function cmd_handler(...)
 		
 		Write.Info("")
 		Write.Info("Use \ay/yalm2 mintier <tier>\ax to set minimum armor tier for this character")
+	elseif command == "collectscan" then
+		-- Scan character's collection achievements
+		local collection_scanner = require("yalm2.lib.collectionscanner")
+		if collection_scanner.init() then
+			local needed = collection_scanner.scan_character()
+			Write.Info("Collection scan complete. You need \ay%d\ax more collectibles.", needed)
+		else
+			Write.Error("Failed to initialize collection database")
+		end
+	elseif command == "collectcheck" then
+		-- Check which characters need a specific collectible
+		if #args < 2 then
+			Write.Error("Usage: /yalm2 collectcheck <item name>")
+			return
+		end
+		-- Join remaining args as item name
+		local item_name = table.concat(args, " ", 2)
+		local collection_scanner = require("yalm2.lib.collectionscanner")
+		if collection_scanner.init() then
+			local characters = collection_scanner.find_characters_needing_item(item_name)
+			if #characters > 0 then
+				Write.Info("Characters needing '\ay%s\ax':", item_name)
+				for _, char in ipairs(characters) do
+					Write.Info("  \ag%s\ax (%s) - Collection: %s", char.character_name, char.expansion, char.collection_name)
+				end
+			else
+				if collection_scanner.is_collectible(item_name) then
+					Write.Info("No characters need '\ay%s\ax' - all have it or none scanned", item_name)
+				else
+					Write.Warn("'\ay%s\ax' not found in collection database. Run /yalm2 collectscan on characters first.", item_name)
+				end
+			end
+		else
+			Write.Error("Failed to initialize collection database")
+		end
 	elseif loot_command and loot_command.loaded then
 		if not state.command_running then
 			state.command_running = command

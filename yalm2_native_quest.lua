@@ -163,8 +163,10 @@ local function extract_quest_item_from_objective(objective_text)
         "[Rr]etr[ie][ie]ve one of (.+['''].+)",  -- "Retrieve one of Faernoc's fang" (handles typos: Retreive, RetrIeve, etc.)
         "Gather some (.+) from",           -- "Gather some Orbweaver Silks from the orbweaver spiders"
         "Collect %d+ ?(.+) from",          -- "Collect 5 Bone Fragments from skeletons"
+        "Collect %d+ (.+)",                -- "Collect 5 chests of crystal shards" (no "from" clause)
         "Loot %d+ ?(.+) from",             -- "Loot 4 antheia bloom seeds from the rotdogs"
         "Obtain %d+ ?(.+) from",           -- "Obtain 2 crystal shards from corrupted akhevan"
+        "Obtain %d+ (.+)",                 -- "Obtain 2 crystal shards" (no "from" clause)
         "Obtain [a-z]+ (.+) from",         -- "Obtain a crystal shard from corrupted akhevan" (article + item)
         "Gather (.+) from",                -- "Gather Werewolf Pelts from wolves" 
         "Collect (.+) %- %d+/%d+",         -- "Collect Bone Fragments - 2/5"
@@ -1176,7 +1178,7 @@ local function refresh_character_after_loot(character_name, item_name)
                                     failed_objectives[objective.objective] = {
                                         filtered_words = quest_interface.get_last_filtered_words()
                                     }
-                                    Write.Info("[CHAR_REFRESH] Failed to match objective: '%s' - User can provide search term in UI", objective.objective)
+                                    Write.Debug("[CHAR_REFRESH] Failed to match objective: '%s' - User can provide search term in UI", objective.objective)
                                 end
                             end
                         end
@@ -1522,9 +1524,9 @@ local function manual_refresh_with_messages(show_messages)
     local escaped_quest_string = quest_data_string:gsub('"', '\\"')
     local escaped_qty_string = quest_data_with_qty:gsub('"', '\\"')
     
-    -- DEBUG: Log what we're about to set
+    -- DEBUG: Log what we're about to set (moved from INFO to DEBUG to reduce log spam)
     Write.Debug("[MANUAL_REFRESH] About to set shared quest data: len=%d, value=%s", escaped_qty_string:len(), escaped_qty_string:sub(1, 100))
-    Write.Info("[MANUAL_REFRESH] Quest data with qty: %s", quest_data_with_qty)
+    Write.Debug("[MANUAL_REFRESH] Quest data with qty: %s", quest_data_with_qty)
     
     -- Store in shared quest data store (works across script isolation boundaries)
     quest_data_store.set_quest_data_with_qty(quest_data_with_qty)
@@ -1676,8 +1678,19 @@ local function main()
                                     -- Try to extract item name
                                     local item_name = extract_quest_item_from_objective(objective.objective)
                                     if item_name then
-                                        -- Fuzzy match to database
-                                        local matched_item = quest_interface.find_matching_quest_item(objective.objective)
+                                        -- CHECK CACHE FIRST before expensive fuzzy matching
+                                        local matched_item = nil
+                                        local cached = quest_db.get_objective(objective.objective)
+                                        if cached and cached.item_name then
+                                            matched_item = cached.item_name
+                                        else
+                                            -- Only do expensive fuzzy match if not cached
+                                            matched_item = quest_interface.find_matching_quest_item(objective.objective)
+                                            -- Cache the result for next time
+                                            if matched_item then
+                                                quest_db.store_objective(objective.objective, task.task_name, matched_item)
+                                            end
+                                        end
                                         if matched_item then
                                             if not quest_items[matched_item] then
                                                 quest_items[matched_item] = {}
@@ -1715,10 +1728,20 @@ local function main()
                             if objective and objective.objective and objective.status ~= "Done" then
                                 local item_name = extract_quest_item_from_objective(objective.objective)
                                 if item_name then
-                                    local matched_item = quest_interface.find_matching_quest_item(objective.objective)
+                                    -- CHECK CACHE FIRST before expensive fuzzy matching
+                                    local matched_item = nil
+                                    local cached = quest_db.get_objective(objective.objective)
+                                    if cached and cached.item_name then
+                                        matched_item = cached.item_name
+                                    else
+                                        -- Only do expensive fuzzy match if not cached
+                                        matched_item = quest_interface.find_matching_quest_item(objective.objective)
+                                        -- Cache the result for next time
+                                        if matched_item then
+                                            quest_db.store_objective(objective.objective, task.task_name, matched_item)
+                                        end
+                                    end
                                     if matched_item then
-                                        -- CRITICAL: Cache the objective so UI shows item name, not "not cached yet"
-                                        quest_db.store_objective(objective.objective, task.task_name, matched_item)
                                         
                                         if not quest_items[matched_item] then
                                             quest_items[matched_item] = {}
